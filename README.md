@@ -16,7 +16,7 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 
 ## Install
 
-Download the WGT from the latest release. A WGT signed for developer installation is tied to its signing certificates and the device IDs included in the distributor certificate. The published package was built for the author's test TV; another developer TV needs a WGT signed with its own Samsung developer certificate. Use Tizen Studio and follow Samsung's [TV application signing guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). This package is not distributed through Samsung Apps.
+Download the source archive from the latest release or clone this repository, then build and sign a WGT for your TV. Samsung's distributor certificate includes the target device ID, so a package signed for one developer TV is not a general installer. Create a certificate profile for your device in Tizen Studio by following Samsung's [TV application signing guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). This app is not distributed through Samsung Apps.
 
 ## Requirements and compatibility
 
@@ -47,7 +47,7 @@ tizen build-web -- app
 tizen package -t wgt -s YOUR_CERTIFICATE_PROFILE -- app/.buildResult
 ```
 
-For installation, enable Developer Mode on the TV, connect it as a Tizen device, permit installation, then install the WGT using Tizen Studio. See Samsung's [TV device setup](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/connecting-tv.html).
+For installation, enable Developer Mode on the TV, connect it as a Tizen device, permit installation, then install the WGT using Tizen Studio. See Samsung's [TV device setup](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
 
 ## Authentication
 
