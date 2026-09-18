@@ -12,11 +12,20 @@
 | Версия пакета | 4.0.4 |
 | Лицензия | GPL-3.0; см. [LICENSE](LICENSE) и уведомления исходного проекта |
 | English | [README](README.md) |
-| Релиз | [Скачать WGT для повторной подписи](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
+| Релиз | [Скачать установочный пакет](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
 ## Установка
 
-Скачайте файл `resign-required.wgt` из последнего релиза. Файлы подписи Samsung намеренно удалены, поэтому установить скачанный файл напрямую нельзя. [Импортируйте WGT как существующий проект Tizen](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html), выберите профиль сертификата Samsung с DUID своего телевизора и соберите новый подписанный WGT. Также можно клонировать репозиторий и собрать приложение из исходников. Следуйте [инструкции Samsung по сертификатам](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). Приложение не опубликовано в Samsung Apps.
+В ZIP из релиза находится WGT, из которого удалены исходные файлы подписи Samsung. Сертификат дистрибьютора Samsung привязан к DUID целевого телевизора, поэтому перед установкой скачанный WGT необходимо подписать для своего телевизора.
+
+1. Скачайте ZIP из [последнего релиза](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) и извлеките WGT, имя которого заканчивается на `-resign-required.wgt`.
+2. Установите Tizen Studio, Samsung TV Extension и Certificate Manager.
+3. Включите Developer Mode на телевизоре, подключите его к Tizen Studio и создайте профиль сертификата Samsung с DUID телевизора. Следуйте [инструкции по сертификатам](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html) и [инструкции по подключению ТВ](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
+4. [Импортируйте извлечённый WGT как существующий проект Tizen](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html).
+5. Выберите свой профиль сертификата Samsung и соберите новый подписанный WGT.
+6. Установите новый подписанный WGT на подключённый телевизор через Tizen Studio.
+
+Также можно клонировать репозиторий и собрать приложение из исходников. Приложение не опубликовано в Samsung Apps.
 
 ## Требования и совместимость
 
@@ -26,15 +35,7 @@
 
 Обработка рассчитана на структуру Twitch fMP4, проверенную при разработке. Это не универсальный MP4-конвертер. Поддержка шифрованных потоков и вывода 1440p не заявляется.
 
-## Что изменено
-
-- Список вариантов прямого эфира ограничен H.264 с разрешением не выше 1920×1080; начальное предпочтение — 720p.
-- Для прямого эфира применяется hls.js и MediaSource.
-- Аудио и видео fMP4 разделяются на ТВ; удаляются данные другой дорожки, временные метки и сжатые пакеты сохраняются без перекодирования.
-- Добавлены исправления JavaScript для старого Tizen Web Runtime.
-- Исправлены положение видео и скрытие индикатора загрузки при воспроизведении.
-- Добавлена проверка пустых данных эмотиконов и некорректных системных сообщений чата.
-- Диагностика отправляется в консоль и не перекрывает изображение.
+## Исходный проект
 
 Основа — [fgl27/smarttv-twitch](https://github.com/fgl27/smarttv-twitch), в том числе работа HLS/MSE из [PR #328](https://github.com/fgl27/smarttv-twitch/pull/328). Проблема старых телевизоров описана в [issue #316](https://github.com/fgl27/smarttv-twitch/issues/316). Уведомления об авторских правах и лицензия исходного проекта сохранены.
 

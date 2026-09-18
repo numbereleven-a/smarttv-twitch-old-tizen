@@ -12,11 +12,20 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | Package version | 4.0.4 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Language | [Русская версия](README_RU.md) |
-| Release | [Download the re-signable WGT](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
+| Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
 ## Install
 
-Download the `resign-required.wgt` asset from the latest release. Its Samsung signature files were intentionally removed, so it cannot be installed as downloaded. [Import the WGT as an existing Tizen project](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html), select a Samsung certificate profile that includes your TV's DUID, and build a newly signed WGT. You can also clone this repository and build from source. Follow Samsung's [TV application signing guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). This app is not distributed through Samsung Apps.
+The release ZIP contains a WGT with its original Samsung signature files removed. A Samsung distributor certificate is tied to the target TV's DUID, so the downloaded WGT must be signed for your own television before it can be installed.
+
+1. Download the ZIP from the [latest release](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) and extract the WGT whose name ends in `-resign-required.wgt`.
+2. Install Tizen Studio with the Samsung TV extension and Certificate Manager.
+3. Enable Developer Mode on the TV, connect it to Tizen Studio, and create a Samsung certificate profile that includes the TV's DUID. Follow Samsung's [certificate guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html) and [TV connection guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
+4. [Import the extracted WGT as an existing Tizen project](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html).
+5. Select your Samsung certificate profile and build a new signed WGT.
+6. Install that newly signed WGT on the connected TV through Tizen Studio.
+
+You can alternatively clone this repository and build from source. The app is not distributed through Samsung Apps.
 
 ## Requirements and compatibility
 
@@ -26,15 +35,7 @@ The app manifest's Tizen 2.3 minimum is an installation declaration, not proof o
 
 The remuxer handles the multiplexed Twitch fMP4 layout validated during development. It is not a general-purpose MP4 parser; unsupported fragment layouts, encryption, and 1440p output are not claimed to work.
 
-## Changes in this fork
-
-- Filters the available live renditions to H.264 at or below 1920×1080 and starts with a 720p preference.
-- Uses hls.js/MSE instead of the old native HLS route for the live stream.
-- Splits multiplexed fMP4 audio/video, removes the other track's fragment data, and preserves encoded packet payloads and timestamps. No re-encoding is performed.
-- Adds ES5-era compatibility fixes required by the tested Tizen Web Runtime.
-- Fixes live-video placement and loading-indicator dismissal during playback.
-- Guards chat parsing against malformed emote and system-message data.
-- Keeps diagnostics in the JavaScript console without covering the video.
+## Upstream project
 
 The base player is [fgl27/smarttv-twitch](https://github.com/fgl27/smarttv-twitch), including its HLS/MSE work from [PR #328](https://github.com/fgl27/smarttv-twitch/pull/328). The upstream issue describing the older-TV failure is [#316](https://github.com/fgl27/smarttv-twitch/issues/316). Upstream copyright and license notices are retained.
 
