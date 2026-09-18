@@ -12,11 +12,11 @@
 | Версия пакета | 4.0.4 |
 | Лицензия | GPL-3.0; см. [LICENSE](LICENSE) и уведомления исходного проекта |
 | English | [README](README.md) |
-| Релиз | [Скачать исходный архив](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
+| Релиз | [Скачать WGT для повторной подписи](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
 ## Установка
 
-Скачайте исходный архив из последнего релиза или клонируйте репозиторий, затем соберите и подпишите WGT для своего ТВ. В сертификате дистрибьютора Samsung указан DUID целевого телевизора, поэтому пакет для одного телевизора разработчика не является универсальным установщиком. Создайте профиль для своего устройства в Tizen Studio по [инструкции Samsung по сертификатам](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). Приложение не опубликовано в Samsung Apps.
+Скачайте файл `resign-required.wgt` из последнего релиза. Файлы подписи Samsung намеренно удалены, поэтому установить скачанный файл напрямую нельзя. [Импортируйте WGT как существующий проект Tizen](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html), выберите профиль сертификата Samsung с DUID своего телевизора и соберите новый подписанный WGT. Также можно клонировать репозиторий и собрать приложение из исходников. Следуйте [инструкции Samsung по сертификатам](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). Приложение не опубликовано в Samsung Apps.
 
 ## Требования и совместимость
 

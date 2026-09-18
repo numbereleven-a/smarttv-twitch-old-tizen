@@ -12,11 +12,11 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | Package version | 4.0.4 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Language | [Русская версия](README_RU.md) |
-| Release | [Downloads](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
+| Release | [Download the re-signable WGT](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
 ## Install
 
-Download the source archive from the latest release or clone this repository, then build and sign a WGT for your TV. Samsung's distributor certificate includes the target device ID, so a package signed for one developer TV is not a general installer. Create a certificate profile for your device in Tizen Studio by following Samsung's [TV application signing guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). This app is not distributed through Samsung Apps.
+Download the `resign-required.wgt` asset from the latest release. Its Samsung signature files were intentionally removed, so it cannot be installed as downloaded. [Import the WGT as an existing Tizen project](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html), select a Samsung certificate profile that includes your TV's DUID, and build a newly signed WGT. You can also clone this repository and build from source. Follow Samsung's [TV application signing guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html). This app is not distributed through Samsung Apps.
 
 ## Requirements and compatibility
 
