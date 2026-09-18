@@ -1354,7 +1354,7 @@ function ChatLive_CheckIfSub(message, chat_number) {
     var tags = message.tags;
     var params = message.params;
 
-    if (!tags || !tags.hasOwnProperty('msg-id') || !tags['system-msg']) return; //bad formatted message
+    if (!tags || !tags.hasOwnProperty('msg-id') || typeof tags['system-msg'] !== 'string' || !tags['system-msg']) return; //bad formatted message
 
     var gifter_Or_Sub_name = tags['display-name'] || null,
         msgid = tags['msg-id'] || null,
@@ -1566,6 +1566,7 @@ function ChatLive_checkEmotes(tags) {
 
             for (var i = 0, len = tags.emotes.length; i < len; i++) {
                 emote = tags.emotes[i].split(':');
+                if (!emote[0] || !emote[1]) continue;
 
                 if (!emotes[emote[0]]) emotes[emote[0]] = [];
 

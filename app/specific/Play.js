@@ -9,7 +9,7 @@ var Play_MaxChatSizeValue = 4;
 var Play_LowLatency = false;
 var Play_CanLowLatency = true;
 var Play_PanelHideID = null;
-var Play_quality = 'source';
+var Play_quality = '720p';
 var Play_qualityPlaying = Play_quality;
 var Play_forceAvplayLive = false;
 var Play_isFullScreen = true;
@@ -242,6 +242,7 @@ function Play_GetHlsConfig() {
     // Conservative profiles: LL reduces latency without aggressive auto-seek behavior.
     if (Play_LowLatency) {
         return {
+            enableWorker: false,
             lowLatencyMode: true,
             liveSyncDurationCount: 2,
             liveMaxLatencyDurationCount: 4
@@ -249,6 +250,7 @@ function Play_GetHlsConfig() {
     }
 
     return {
+        enableWorker: false,
         lowLatencyMode: false,
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 6
@@ -256,12 +258,15 @@ function Play_GetHlsConfig() {
 }
 
 function initHLSPlayer() {
+    PlaybackDiagnostics('HLS supported: ' + Play_HlsSupported);
     // Create HTML5 <video> tag
     var video = document.createElement('video');
     video.id = 'hlsplayer';
     video.style.width = '100%';
     video.style.height = '100%';
     video.style.position = 'absolute';
+    video.style.top = '0';
+    video.style.left = '0';
     video.style.zIndex = '0';
     video.style.backgroundColor = 'black';
     video.style.visibility = 'hidden';
@@ -272,20 +277,39 @@ function initHLSPlayer() {
         Play_Playing = false;
     };
     video.onplaying = function () {
+        PlaybackDiagnostics('VIDEO playing: ' + video.videoWidth + 'x' + video.videoHeight);
         video.style.visibility = 'visible';
         Play_HideBufferDialog();
         Play_HideBlackOverlay();
     };
     video.oncanplay = function () {
+        video.style.visibility = 'visible';
         Play_HideBufferDialog();
         Play_HideBlackOverlay();
     };
+    var lastVisiblePlaybackTime = 0;
+    video.addEventListener('timeupdate', function () {
+        if (Play_avplay_hls_player !== video || video.paused || video.readyState < 2) return;
+        if (video.readyState >= 3 && video.currentTime > lastVisiblePlaybackTime) {
+            Play_HideBufferDialog();
+            Play_HideBlackOverlay();
+        }
+        lastVisiblePlaybackTime = video.currentTime;
+        if (video.style.visibility === 'hidden') {
+            video.style.visibility = 'visible';
+            Play_HideBlackOverlay();
+            PlaybackDiagnostics('VIDEO visible: ' + video.videoWidth + 'x' + video.videoHeight);
+        }
+    });
     video.onwaiting = function () {
         if (!Play_Playing) return;
         Play_showBufferDialog();
     };
     video.onended = function () {
         Play_Playing = false;
+    };
+    video.onerror = function () {
+        PlaybackDiagnostics('VIDEO error: ' + (video.error ? video.error.code : 'unknown'));
     };
 
     Play_avplay_hls_player = video;
@@ -302,13 +326,34 @@ function initHLSPlayer() {
     try {
         // Initialize hls.js controller
         hls = new Hls(Play_GetHlsConfig());
+        LegacyFmp4Buffers(hls);
+        var diagnosticEvents = [Hls.Events.LEVEL_LOADED, Hls.Events.FRAG_LOADING, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_BUFFERED];
+        diagnosticEvents.forEach(function (name) {
+            var reported = false;
+            hls.on(name, function () {
+                if (!reported) PlaybackDiagnostics(name);
+                reported = true;
+            });
+        });
+        window.setTimeout(function () {
+            if (Play_avplay_hls_player !== video) return;
+            var buffer = video.buffered;
+            PlaybackDiagnostics('After 15s: ready=' + video.readyState + ' paused=' + video.paused + ' time=' + video.currentTime.toFixed(1));
+            PlaybackDiagnostics('Buffer ranges: ' + buffer.length + (buffer.length ? ' end=' + buffer.end(buffer.length - 1).toFixed(1) : ''));
+            var rect = video.getBoundingClientRect();
+            PlaybackDiagnostics('VIDEO ' + video.videoWidth + 'x' + video.videoHeight + ' visibility=' + window.getComputedStyle(video).visibility + ' rect=' + Math.round(rect.left) + ',' + Math.round(rect.top) + ',' + Math.round(rect.width) + ',' + Math.round(rect.height));
+        }, 15000);
         hls.on(Hls.Events.MEDIA_ATTACHED, function () {
+            PlaybackDiagnostics('HLS media attached');
             console.log('<video> and hls.js are now bound together !');
         });
         hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+            PlaybackDiagnostics('HLS manifest parsed: ' + data.levels.length + ' levels');
             console.log('manifest loaded, found ' + data.levels.length + ' quality level');
         });
         hls.on(Hls.Events.ERROR, function (event, data) {
+            PlaybackDiagnostics('HLS: ' + data.type + '/' + data.details + ' fatal=' + data.fatal);
+            if (data.error) PlaybackDiagnostics('Exception: ' + (data.error.message || String(data.error)));
             console.error('HLS ERROR', event, data);
         });
 
@@ -318,6 +363,7 @@ function initHLSPlayer() {
         // dependency on a third-party server at startup.
         hls.attachMedia(video);
     } catch (e) {
+        PlaybackDiagnostics('HLS init exception: ' + e.name + ': ' + e.message);
         console.error('initHLSPlayer failed', e);
         hls = null;
     }
@@ -1059,14 +1105,7 @@ function Play_loadDataRequest(skipProxy) {
 
                 xmlHttp.open('GET', theUrl, true);
 
-                if (hls && Play_LiveUseHls) {
-                    try {
-                        // Load stream url to HLS player
-                        hls.loadSource(theUrl);
-                    } catch (e) {
-                        console.error('Failed to load hls source!', e);
-                    }
-                }
+                // Load only the selected, FHD-compatible rendition after parsing.
             }
             xmlHttp.timeout = Play_loadingDataTimeout;
         }
@@ -1265,6 +1304,7 @@ function Play_loadDataSuccess(responseText) {
 
         Play_playlistResponse = responseText;
         Play_qualities = Play_extractQualities(Play_playlistResponse);
+        PlaybackDiagnostics('Compatible qualities: ' + Play_qualities.length);
         Play_state = Play_STATE_PLAYING;
         if (Play_isOn) Play_qualityChanged();
 
@@ -1309,6 +1349,12 @@ function Play_extractQualities(input) {
             });
         } else tempCount++;
     }
+
+    // This build targets the 2016 KU6000: keep AVC renditions within FHD.
+    result = result.filter(function (quality) {
+        var dimensions = quality.resolution.split('x');
+        return quality.codec === ' | avc' && Number(dimensions[0]) <= 1920 && Number(dimensions[1]) <= 1080;
+    });
 
     result.sort(function (a, b) {
         var ah = 0;
@@ -1366,6 +1412,11 @@ function Play_extractStreamDeclarations(input) {
 
 function Play_qualityChanged() {
     window.clearInterval(Play_streamCheckId);
+    if (!Play_qualities.length) {
+        Play_HideBufferDialog();
+        Play_showWarningDialog('No H.264 stream at 1080p or below is available.');
+        return;
+    }
     Play_qualityIndex = 0;
     Play_playingUrl = Play_qualities[0].url;
 
@@ -1383,6 +1434,7 @@ function Play_qualityChanged() {
 
     Play_quality = Play_qualities[Play_qualityIndex].id;
     Play_qualityPlaying = Play_quality;
+    PlaybackDiagnostics('Selected quality: ' + Play_quality);
 
     Play_SetHtmlQuality('stream_quality', true);
 
@@ -2720,7 +2772,6 @@ function Play_PlayHLSUrl(url) {
 
         // Загружаем URL
         hls.loadSource(url);
-        hls.attachMedia(Play_avplay_hls_player);
         Play_SetHlsVisible(true);
         Play_avplay_hls_player.play();
     } catch (e) {
