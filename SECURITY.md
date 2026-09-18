@@ -1,5 +1,5 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-send a email to fglfgl27@gmail.com explaing.
+Please report vulnerabilities privately through a GitHub Security Advisory for this repository. Include affected versions, reproduction steps, and the expected impact.

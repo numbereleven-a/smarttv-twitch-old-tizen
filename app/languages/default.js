@@ -1,7 +1,7 @@
 // Bellow here are the all untranslatable string,they are a combination of strings and html code use by pats of the code
 var LINK_COLOR = '#328df5';
 var STR_SPACE_HTML = '&nbsp;';
-var STR_ABOUT_EMAIL = 'fglfgl27@gmail.com';
+var STR_ABOUT_EMAIL = '';
 var STR_BR = '<br>';
 var STR_DOT = '<i  class="icon-circle class_bold" style="font-size: 50%; vertical-align: middle;"></i>' + '  ';
 var STR_DIV_TITLE = '<div class="about_text_title">';
