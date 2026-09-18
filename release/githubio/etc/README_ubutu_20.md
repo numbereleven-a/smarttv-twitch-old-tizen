@@ -36,7 +36,7 @@ the libs are **libcrypto.so.0** and **libcrypto.so.1.0.0**, just search for thos
 
 Once you copy it all you can test to see if sdb will work by executing the file in terminal
 
-    '/home/user/tizen-studio/tools/sdb' 
+    '$HOME/tizen-studio/tools/sdb'
 
 if you see this
 

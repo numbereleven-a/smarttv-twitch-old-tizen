@@ -1,10 +1,10 @@
 # SmartTV Twitch — Old Tizen
 
-This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that enable 1440p may deliver even their 720p and 1080p variants as fragmented MP4 (fMP4), which the legacy native player on the tested TV could not play. The app uses hls.js and MediaSource, separates the H.264 video and AAC audio fragments on the TV, and feeds them to separate media buffers. It does not transcode the stream or require a PC relay.
+This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that enable 1440p may deliver even their 720p and 1080p variants as fragmented MP4 (fMP4), which the legacy native player on the tested TV could not play. The app uses hls.js and MediaSource, separates the H.264 video and AAC audio fragments on the TV, and feeds them to separate media buffers.
 
 **This enables up to 1080p on tested 1440p-enabled channels; it does not add 1440p playback.**
 
-**Tested device:** Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1. The owner confirmed live picture and sound on `rdulive` and `silvername`, channel search, quality switching, Twitch account authorization, and the app without the on-screen diagnostics overlay. No other TV model has been confirmed.
+**Tested device:** Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1. No other TV model has been confirmed.
 
 | | |
 |---|---|
@@ -52,4 +52,4 @@ For installation, enable Developer Mode on the TV, connect it as a Tizen device,
 
 ## Authentication
 
-The original Twitch account authorization flow is retained. The owner confirmed that authorization succeeds in this fork. The app uses the scopes and authorization process documented by the upstream project; consult its [authentication guide](https://github.com/fgl27/smarttv-twitch#twitchtv-authentication-key).
+The original Twitch account authorization flow is retained. The app uses the scopes and authorization process documented by the upstream project; consult its [authentication guide](https://github.com/fgl27/smarttv-twitch#twitchtv-authentication-key).
