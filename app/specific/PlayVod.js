@@ -58,6 +58,7 @@ var PlayVod_hlsSeekApplied = false;
 //Variable initialization end
 
 function PlayVod_Start() {
+    Play_InvalidateSession();
     Play_showBufferDialog();
     Play_HideEndDialog();
     // Honor device MSE support and the player toggle: on devices without MSE
@@ -353,7 +354,7 @@ function PlayVod_Resume() {
             PlayVod_SaveVodIds();
             Chat_Pause();
             if (Main_IsNotBrowser) {
-                Play_avplay.pause();
+                Play_ActivePlayer().pause();
                 Play_StopAndClose();
                 Main_values.vodOffset = parseInt(PlayVod_currentTime / 1000);
             }
@@ -408,16 +409,20 @@ function PlayVod_loadData() {
 var PlayVod_hlsBaseURL = 'https://usher.ttvnw.net/vod/';
 
 function PlayVod_loadDataRequest() {
+    var session = Play_sessionId;
+    var vodId = Main_values.ChannelVod_vodId;
+    var operation = PlayVod_state;
     var theUrl,
         state = PlayVod_state === Play_STATE_LOADING_TOKEN;
 
     var xmlHttp = new XMLHttpRequest();
+    Play_requests.push(xmlHttp);
 
     try {
         if (state) {
             xmlHttp.open('POST', 'https://gql.twitch.tv/gql', true);
         } else {
-            if (!PlayVod_tokenResponse.hasOwnProperty('value') || !PlayVod_tokenResponse.hasOwnProperty('signature')) {
+            if (!PlayVod_tokenResponse || !PlayVod_tokenResponse.hasOwnProperty('value') || !PlayVod_tokenResponse.hasOwnProperty('signature')) {
                 Play_410ERROR = true;
                 console.log('Play_410ERROR ' + Play_410ERROR);
                 PlayVod_loadDataError();
@@ -449,7 +454,10 @@ function PlayVod_loadDataRequest() {
         xmlHttp.ontimeout = function () {};
 
         xmlHttp.onreadystatechange = function () {
+            if (session !== Play_sessionId || vodId !== Main_values.ChannelVod_vodId || operation !== PlayVod_state || !PlayVod_isOn) return;
             if (xmlHttp.readyState === 4) {
+                var requestIndex = Play_requests.indexOf(xmlHttp);
+                if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
                 if (xmlHttp.status === 200) {
                     PlayVod_loadDataSuccess(xmlHttp.responseText);
                     //Play_410ERROR = false;
@@ -482,13 +490,12 @@ function PlayVod_loadDataRequest() {
         xmlHttp.send(state ? Play_vod_token.replace('%x', Main_values.ChannelVod_vodId) : null);
     } catch (e) {
         PlayVod_loadDataError();
-        console.log('PlayVod_loadDataRequest e ' + e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
 function PlayVod_loadDataLog(xmlHttp) {
     console.log('PlayVod_loadDataLog status', xmlHttp.status);
-    console.log('PlayVod_loadDataLog responseText', xmlHttp.responseText);
 }
 
 function PlayVod_loadDataError() {
@@ -505,7 +512,7 @@ function PlayVod_loadDataError() {
                 }
             }
         } catch (e) {
-            console.log('PlayVod_loadDataError e ' + e);
+            PlaybackDiagnostics('Playback operation failed');
         }
 
         PlayVod_loadingDataTry++;
@@ -535,7 +542,7 @@ function PlayVod_loadDataSuccess(responseText) {
             PlayVod_tokenResponse = JSON.parse(responseText).data.videoPlaybackAccessToken;
         } catch (e) {
             PlayVod_tokenResponse = null;
-            console.log('PlayVod_loadDataSuccess e ' + e);
+            PlaybackDiagnostics('Playback operation failed');
         }
 
         PlayVod_state = Play_STATE_LOADING_PLAYLIST;
@@ -588,6 +595,11 @@ function PlayVod_isSub() {
 
 function PlayVod_qualityChanged() {
     window.clearInterval(PlayVod_streamCheckId);
+    if (!PlayVod_qualities.length) {
+        Play_HideBufferDialog();
+        Play_showWarningDialog('No H.264 stream at 1080p or below is available.');
+        return;
+    }
     PlayVod_qualityIndex = 0;
     PlayVod_playingUrl = PlayVod_qualities[0].url;
 
@@ -665,29 +677,33 @@ var PlayVod_listener = {
 };
 
 function PlayVod_BindHlsListeners() {
-    if (!Play_avplay_hls_player || PlayVod_hlsListenerBound) return;
-    PlayVod_hlsListenerBound = true;
+    if (!Play_avplay_hls_player || Play_avplay_hls_player.vodListenersBound) return;
+    Play_avplay_hls_player.vodListenersBound = true;
+    PlayVod_hlsSeekApplied = false;
+    var video = Play_avplay_hls_player;
+    var seekTarget = PlayVod_replay ? 0 : Main_values.vodOffset;
+    PlayVod_replay = false;
 
     Play_avplay_hls_player.onloadedmetadata = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         ChannelVod_DurationSeconds = Math.floor(Play_avplay_hls_player.duration || 0);
         if (ChannelVod_DurationSeconds) Main_textContent('progress_bar_duration', Play_timeS(ChannelVod_DurationSeconds));
-        if (Main_values.vodOffset && !PlayVod_replay && !PlayVod_hlsSeekApplied) {
+        if (seekTarget && !PlayVod_hlsSeekApplied) {
             try {
-                Play_avplay_hls_player.currentTime = Math.max(Main_values.vodOffset, 0);
+                Play_avplay_hls_player.currentTime = Math.max(seekTarget, 0);
                 PlayVod_hlsSeekApplied = true;
-                PlayVod_currentTime = Main_values.vodOffset * 1000;
-                PlayVod_ProgresBarrUpdate(Main_values.vodOffset, ChannelVod_DurationSeconds, true);
-                Chat_offset = Main_values.vodOffset;
+                PlayVod_currentTime = seekTarget * 1000;
+                PlayVod_ProgresBarrUpdate(seekTarget, ChannelVod_DurationSeconds, true);
+                Chat_offset = seekTarget;
                 if (PlayClip_HasVOD) Chat_Init();
             } catch (e) {
-                console.log('PlayVod HLS seek error', e);
+                PlaybackDiagnostics('Playback operation failed');
             }
         }
     };
 
     Play_avplay_hls_player.ontimeupdate = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         var currentTime = Math.floor(Play_avplay_hls_player.currentTime * 1000);
         if (currentTime > 1000) PlayVod_switchingToHls = false;
         if (Play_avplay_hls_player.currentTime > 0) {
@@ -698,24 +714,24 @@ function PlayVod_BindHlsListeners() {
     };
 
     Play_avplay_hls_player.onended = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         if (PlayVod_switchingToHls || PlayVod_currentTime < 1000) return;
         Play_PannelEndStart(2);
     };
 
     Play_avplay_hls_player.onerror = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         console.log('PlayVod HLS onerror');
-        Play_EndStart(false, 2);
+        Play_MediaFailure(video);
     };
 
     Play_avplay_hls_player.onwaiting = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         if (!Play_BufferDialogVisible()) Play_showBufferDialog();
     };
 
     Play_avplay_hls_player.onplaying = function () {
-        if (!PlayVod_isOn || !PlayVod_useHls) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
         PlayVod_switchingToHls = false;
         Play_HideBlackOverlay();
         Play_HideBufferDialog();
@@ -730,7 +746,7 @@ function PlayVod_UseHlsFallback(reason) {
     try {
         Play_StopAndClose();
     } catch (e) {
-        console.log('PlayVod fallback stop error', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
     Play_PlayHLSUrl(PlayVod_playingUrl);
     PlayVod_BindHlsListeners();
@@ -741,9 +757,11 @@ function PlayVod_onPlayer() {
     Play_showBufferDialog();
 
     console.log('PlayVod_onPlayer:', 'date: ' + new Date());
-    console.log('PlayVod_onPlayer:', '\n' + '\n"' + PlayVod_playingUrl + '"\n');
 
     if (PlayVod_useHls) {
+        if (Play_avplay_hls_player && Play_avplay_hls_player.vodListenersBound && !PlayVod_replay) {
+            Main_values.vodOffset = Play_avplay_hls_player.currentTime || Main_values.vodOffset;
+        }
         Play_PlayHLSUrl(PlayVod_playingUrl);
         PlayVod_BindHlsListeners();
         return;
@@ -751,6 +769,8 @@ function PlayVod_onPlayer() {
 
     if (Main_IsNotBrowser) {
         Play_StopAndCloseAndPlay(PlayVod_playingUrl);
+        var attempt = ++Play_nativeAttempt;
+        var session = Play_sessionId;
 
         if (Main_values.vodOffset > ChannelVod_DurationSeconds) Main_values.vodOffset = 0;
 
@@ -768,6 +788,7 @@ function PlayVod_onPlayer() {
 
         Play_avplay.prepareAsync(
             function () {
+                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
                 //successCallback
                 console.log('Play_avplay.prepareAsync Vod OK:', 'date: ' + new Date());
                 Play_avplay.play();
@@ -782,6 +803,7 @@ function PlayVod_onPlayer() {
                 PlayVod_streamCheckId = window.setInterval(PlayVod_PlayerCheck, Play_PlayerCheckInterval);
             },
             function () {
+                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
                 //errorCallback
 
                 console.log('Play_avplay.prepareAsync Vod NOK:', 'date: ' + new Date());
@@ -790,7 +812,9 @@ function PlayVod_onPlayer() {
                 Play_onPlayerCounter++;
                 if (Play_onPlayerCounter < 2) {
                     //try twice to recover else lower the quality
-                    PlayVod_onPlayer();
+                    Play_RetryLater(function () {
+                        if (attempt === Play_nativeAttempt && PlayVod_isOn && !PlayVod_useHls) PlayVod_onPlayer();
+                    }, 750);
                 } else if (PlayVod_qualityIndex < PlayVod_getQualitiesCount() - 1) {
                     console.log('Play_avplay.prepareAsync Vod NOK DropOneQuality:', 'date: ' + new Date());
                     //some device will error out due to codec issue that affect only the main Source stream quality
@@ -1066,7 +1090,7 @@ function PlayVod_jump() {
         } catch (e) {
             Play_HideWarningDialog();
 
-            console.log('PlayVod_jump ', e);
+            PlaybackDiagnostics('Playback operation failed');
             return;
         }
 

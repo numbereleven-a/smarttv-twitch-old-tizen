@@ -473,7 +473,6 @@ function PlayClip_qualityChanged() {
     PlayClip_quality = PlayClip_qualities[PlayClip_qualityIndex].id;
     PlayClip_qualityPlaying = PlayClip_quality;
     PlayClip_SetHtmlQuality('stream_quality');
-    if (Main_isDebug) console.log('PlayClip_onPlayer:', '\n' + '\n"' + PlayClip_playingUrl + '"\n');
     PlayClip_replay = false;
     Play_onPlayerCounter = 0;
     PlayClip_onPlayer();
@@ -484,7 +483,6 @@ function PlayClip_onPlayer() {
     Play_showBufferDialog();
 
     console.log('PlayClip_onPlayer:', 'date: ' + new Date());
-    console.log('PlayClip_onPlayer:', '\n' + '\n"' + PlayClip_playingUrl + '"\n');
 
     if (Main_IsNotBrowser) {
         Play_ShowBlackOverlay();
@@ -518,7 +516,7 @@ function PlayClip_BindVideoListeners() {
                 Play_avplay_hls_player.currentTime = Math.max(PlayClip_offsettime / 1000 - 3.5, 0);
                 PlayClip_hlsSeekApplied = true;
             } catch (e) {
-                console.log('PlayClip video seek error', e);
+                PlaybackDiagnostics('Playback operation failed');
             }
         }
     };
@@ -649,7 +647,7 @@ function PlayClip_PreshutdownStream() {
             Play_avplay_hls_player.removeAttribute('src');
             Play_avplay_hls_player.load();
         } catch (e) {
-            console.log('PlayClip_PreshutdownStream video clear', e);
+            PlaybackDiagnostics('Playback operation failed');
         }
     }
     PlayClip_hlsListenerBound = false;

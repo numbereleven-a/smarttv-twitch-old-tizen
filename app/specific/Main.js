@@ -1312,9 +1312,7 @@ function BasexmlHttpGet(theUrl, Timeout, HeaderQuantity, access_token, callbackS
                 calbackError(key, id);
             }
 
-            console.log('BasexmlHttpGet theUrl', theUrl);
             console.log('BasexmlHttpGet status', xmlHttp.status);
-            console.log('BasexmlHttpGet responseText', xmlHttp.responseText);
         }
     };
 

@@ -209,6 +209,60 @@ var hls;
 var Play_avplay;
 var Play_avplay_obj = null;
 var Play_avplay_hls_player;
+var Play_sessionId = 0;
+var Play_requests = [];
+var Play_retryTimers = [];
+var Play_nativeAttempt = 0;
+
+function Play_InvalidateSession() {
+    Play_sessionId++;
+    Play_nativeAttempt++;
+    var requests = Play_requests;
+    Play_requests = [];
+    for (var i = 0; i < requests.length; i++) {
+        try { requests[i].abort(); } catch (ignore) {}
+    }
+    for (var j = 0; j < Play_retryTimers.length; j++) window.clearTimeout(Play_retryTimers[j]);
+    Play_retryTimers = [];
+}
+
+function Play_RetryLater(callback, delay) {
+    var session = Play_sessionId;
+    var timer = window.setTimeout(function () {
+        var index = Play_retryTimers.indexOf(timer);
+        if (index !== -1) Play_retryTimers.splice(index, 1);
+        if (session === Play_sessionId) callback();
+    }, delay);
+    Play_retryTimers.push(timer);
+}
+
+function Play_UsesVideo() {
+    return PlayClip_isOn || (PlayVod_isOn ? PlayVod_useHls : Play_LiveUseHls);
+}
+
+function Play_ActivePlayer() {
+    return Play_UsesVideo() ? Play_avplay_hls_player : Play_avplay;
+}
+
+function Play_DestroyHls() {
+    var old = hls;
+    hls = null;
+    if (old) {
+        try { old.stopLoad(); } catch (ignore) {}
+        try { old.destroy(); } catch (ignore) {}
+    }
+}
+
+function Play_MediaFailure(video) {
+    if (video !== Play_avplay_hls_player || video.playbackDisposed || video.playbackFailed) return;
+    video.playbackFailed = true;
+    Play_DestroyHls();
+    video.pause();
+    Play_Playing = false;
+    Play_HideBufferDialog();
+    Play_PannelEndStart(PlayVod_isOn ? 2 : (PlayClip_isOn ? 3 : 1));
+    Play_showWarningDialog('Playback failed. Select Replay to try again.');
+}
 
 // Whether hls.js + MSE are usable on this device. Computed once, safely.
 // On devices without it we must NEVER throw at init (would black-screen the app)
@@ -277,24 +331,27 @@ function initHLSPlayer() {
         Play_Playing = false;
     };
     video.onplaying = function () {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         PlaybackDiagnostics('VIDEO playing: ' + video.videoWidth + 'x' + video.videoHeight);
         video.style.visibility = 'visible';
         Play_HideBufferDialog();
         Play_HideBlackOverlay();
     };
     video.oncanplay = function () {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         video.style.visibility = 'visible';
         Play_HideBufferDialog();
         Play_HideBlackOverlay();
     };
     var lastVisiblePlaybackTime = 0;
     video.addEventListener('timeupdate', function () {
-        if (Play_avplay_hls_player !== video || video.paused || video.readyState < 2) return;
+        if (video.playbackDisposed || Play_avplay_hls_player !== video || video.paused || video.readyState < 2) return;
         if (video.readyState >= 3 && video.currentTime > lastVisiblePlaybackTime) {
             Play_HideBufferDialog();
             Play_HideBlackOverlay();
         }
         lastVisiblePlaybackTime = video.currentTime;
+        if (Play_isOn && Play_LiveUseHls) Play_updateCurrentTime(Math.floor(video.currentTime * 1000));
         if (video.style.visibility === 'hidden') {
             video.style.visibility = 'visible';
             Play_HideBlackOverlay();
@@ -302,14 +359,18 @@ function initHLSPlayer() {
         }
     });
     video.onwaiting = function () {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         if (!Play_Playing) return;
         Play_showBufferDialog();
     };
     video.onended = function () {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         Play_Playing = false;
     };
     video.onerror = function () {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         PlaybackDiagnostics('VIDEO error: ' + (video.error ? video.error.code : 'unknown'));
+        Play_MediaFailure(video);
     };
 
     Play_avplay_hls_player = video;
@@ -326,6 +387,8 @@ function initHLSPlayer() {
     try {
         // Initialize hls.js controller
         hls = new Hls(Play_GetHlsConfig());
+        var controller = hls;
+        var recoveries = 0;
         LegacyFmp4Buffers(hls);
         var diagnosticEvents = [Hls.Events.LEVEL_LOADED, Hls.Events.FRAG_LOADING, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_BUFFERED];
         diagnosticEvents.forEach(function (name) {
@@ -352,9 +415,32 @@ function initHLSPlayer() {
             console.log('manifest loaded, found ' + data.levels.length + ' quality level');
         });
         hls.on(Hls.Events.ERROR, function (event, data) {
-            PlaybackDiagnostics('HLS: ' + data.type + '/' + data.details + ' fatal=' + data.fatal);
-            if (data.error) PlaybackDiagnostics('Exception: ' + (data.error.message || String(data.error)));
-            console.error('HLS ERROR', event, data);
+            if (hls !== controller || Play_avplay_hls_player !== video) return;
+            var errorType = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'mediaError' : data.type === Hls.ErrorTypes.NETWORK_ERROR ? 'networkError' : 'otherError';
+            PlaybackDiagnostics('HLS: ' + errorType + ' fatal=' + !!data.fatal);
+            if (!data.fatal) return;
+            if (recoveries++ < 2 && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                try {
+                    var recoveryTime = video.currentTime;
+                    controller.recoverMediaError();
+                    Play_RetryLater(function () {
+                        if (hls === controller && Play_avplay_hls_player === video && video.currentTime <= recoveryTime) Play_MediaFailure(video);
+                    }, 10000);
+                    return;
+                } catch (ignore) {}
+            } else if (recoveries <= 2 && data.type === Hls.ErrorTypes.NETWORK_ERROR && controller.levels && controller.levels.length) {
+                var networkRecoveryTime = video.currentTime;
+                Play_RetryLater(function () {
+                    if (hls === controller && Play_avplay_hls_player === video) {
+                        try { controller.startLoad(); } catch (ignore) { Play_MediaFailure(video); }
+                    }
+                }, 1000 * recoveries);
+                Play_RetryLater(function () {
+                    if (hls === controller && Play_avplay_hls_player === video && video.currentTime <= networkRecoveryTime) Play_MediaFailure(video);
+                }, 15000);
+                return;
+            }
+            Play_MediaFailure(video);
         });
 
         // Attach to <video> tag. We no longer load an external placeholder manifest:
@@ -363,8 +449,8 @@ function initHLSPlayer() {
         // dependency on a third-party server at startup.
         hls.attachMedia(video);
     } catch (e) {
-        PlaybackDiagnostics('HLS init exception: ' + e.name + ': ' + e.message);
-        console.error('initHLSPlayer failed', e);
+        PlaybackDiagnostics('HLS initialization failed');
+        PlaybackDiagnostics('Playback operation failed');
         hls = null;
     }
 }
@@ -401,6 +487,10 @@ function Play_PreStart() {
     Play_ChatBackground = (Main_values.ChatBackground * 0.05).toFixed(2);
     Play_ChatDelayPosition = Main_getItemInt('Play_ChatDelayPosition', 0);
     Play_LowLatency = Main_getItemBool('Play_LowLatency', false);
+    // Keep the user's last explicit live-quality choice across app launches.
+    // Existing installations without this key continue to start at 720p.
+    Play_quality = localStorage.getItem('Play_quality') || '720p';
+    Play_qualityPlaying = Play_quality;
     // Stored by the Settings screen under 'player_mode' as a 1-based index.
     Play_PlayerMode = Main_getItemInt('player_mode', 1) - 1;
     if (Play_PlayerMode < Play_PLAYER_HLS || Play_PlayerMode > Play_PLAYER_NATIVE) Play_PlayerMode = Play_PLAYER_HLS;
@@ -480,22 +570,29 @@ function Play_StopAndCloseAndPlay(url) {
 }
 
 function Play_StopAndClose() {
+    Play_nativeAttempt++;
+    Play_DestroyHls();
     try {
         if (Main_IsNotBrowser && Play_avplay) Play_avplay.stop();
     } catch (e) {
-        console.trace('Play_StopAndClose stop', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 
     try {
-        if (Play_avplay_hls_player) Play_avplay_hls_player.pause();
+        if (Play_avplay_hls_player) {
+            Play_avplay_hls_player.playbackDisposed = true;
+            Play_avplay_hls_player.pause();
+            Play_avplay_hls_player.removeAttribute('src');
+            Play_avplay_hls_player.load();
+        }
     } catch (e) {
-        console.trace('Play_StopAndClose stop hls', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 
     try {
         if (Main_IsNotBrowser && Play_avplay) Play_avplay.close();
     } catch (e) {
-        console.trace('Play_StopAndClose close', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
@@ -504,8 +601,7 @@ function Play_OpenUrl(url) {
         Play_UseAvplay();
         if (Main_IsNotBrowser && Play_avplay) Play_avplay.open(url);
     } catch (e) {
-        console.log('Play_OpenUrl open url', url);
-        console.trace('Play_OpenUrl open', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
@@ -559,8 +655,7 @@ function PlayNonStream_OpenUrl(url) {
         Play_StopAndClose();
         Play_OpenUrl(url);
     } catch (e) {
-        console.log('PlayNonStream_OpenUrl open url', url);
-        console.trace('PlayNonStream_OpenUrl open', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
@@ -611,14 +706,14 @@ function Play_setDisplayRect(isfull) {
             Play_avplay.setDisplayMethod(Is_4_by_3 ? 'PLAYER_DISPLAY_MODE_LETTER_BOX' : 'PLAYER_DISPLAY_MODE_FULL_SCREEN');
         }
     } catch (e) {
-        console.log('setDisplayMethod Is_4_by_3 ' + Is_4_by_3 + ' e ' + e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 
     if (isfull) {
         try {
             if (Main_IsNotBrowser && Play_avplay) Play_avplay.setDisplayRect(0, 0, screen.width, screen.height);
         } catch (e) {
-            console.log(e + ' Play_SetFullScreen true');
+            PlaybackDiagnostics('Playback operation failed');
         }
     } else {
         // Chat is 25% of the screen, resize to 75% and center left
@@ -628,7 +723,7 @@ function Play_setDisplayRect(isfull) {
                 else Play_avplay.setDisplayRect(0, (screen.height * 0.25) / 2, screen.width * 0.75, screen.height * 0.75);
             }
         } catch (e) {
-            console.log(e + ' Play_SetFullScreen false');
+            PlaybackDiagnostics('Playback operation failed');
         }
     }
 }
@@ -638,6 +733,8 @@ function Play_SetChatFont() {
 }
 
 function Play_Start() {
+    Play_InvalidateSession();
+    Play_quality = localStorage.getItem('Play_quality') || '720p';
     // Play_showBufferDialog();
     Play_ResetProxy();
     Play_ShowBlackOverlay();
@@ -762,7 +859,7 @@ function Play_CheckIfIsLive() {
                         Play_CheckIfIsLiveLink();
                     }
                 } catch (e) {
-                    console.log('Play_CheckIfIsLive e ' + e);
+                    PlaybackDiagnostics('Playback operation failed');
                     Play_CheckIfIsLiveError();
                 }
             } else Play_CheckIfIsLiveError();
@@ -808,7 +905,7 @@ function Play_CheckIfIsLiveLink() {
             '&reassignments_supported=true&playlist_include_framerate=true&allow_source=true&p=' +
             Main_RandomInt();
     } catch (e) {
-        console.log('Play_CheckIfIsLiveLink e ' + e);
+        PlaybackDiagnostics('Playback operation failed');
         Play_CheckIfIsLiveLinkError();
         return;
     }
@@ -1064,6 +1161,9 @@ function Play_loadDataRequest(skipProxy) {
     try {
         var theUrl;
         var xmlHttp = new XMLHttpRequest();
+        var session = Play_sessionId;
+        var channel = Main_values.Play_selectedChannel;
+        Play_requests.push(xmlHttp);
         var headers;
         var useProxy;
 
@@ -1086,7 +1186,7 @@ function Play_loadDataRequest(skipProxy) {
             if (Play_state === Play_STATE_LOADING_TOKEN) {
                 xmlHttp.open('POST', 'https://gql.twitch.tv/gql', true);
             } else {
-                if (!Play_tokenResponse.hasOwnProperty('value') || !Play_tokenResponse.hasOwnProperty('signature')) {
+                if (!Play_tokenResponse || !Play_tokenResponse.hasOwnProperty('value') || !Play_tokenResponse.hasOwnProperty('signature')) {
                     Play_410ERROR = true;
                     console.log('Play_410ERROR ' + Play_410ERROR);
                     Play_loadDataError();
@@ -1116,10 +1216,14 @@ function Play_loadDataRequest(skipProxy) {
             for (var i = 0; i < len; i++) xmlHttp.setRequestHeader(headers[i][0], headers[i][1]);
         }
 
+        var operation = Play_state;
         xmlHttp.ontimeout = function () {};
 
         xmlHttp.onreadystatechange = function () {
+            if (session !== Play_sessionId || channel !== Main_values.Play_selectedChannel || !Play_isOn || operation !== Play_state) return;
             if (xmlHttp.readyState === 4) {
+                var requestIndex = Play_requests.indexOf(xmlHttp);
+                if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
                 if (xmlHttp.status === 200) {
                     Play_loadingDataTry = 0;
                     if (Play_isOn) Play_loadDataSuccess(xmlHttp.responseText);
@@ -1162,7 +1266,7 @@ function Play_loadDataRequest(skipProxy) {
 
         xmlHttp.send(Play_state === Play_STATE_LOADING_TOKEN ? Play_live_token.replace('%x', Main_values.Play_selectedChannel) : null);
     } catch (e) {
-        console.log('Play_loadDataRequest e ' + e);
+        PlaybackDiagnostics('Playback operation failed');
         Play_loadDataError();
     }
 }
@@ -1178,8 +1282,7 @@ function PlayHLS_CheckProxyResultFail(responseText) {
 }
 
 function Play_loadDataLog(xmlHttp) {
-    console.log('Play_loadDataLog status', xmlHttp.status);
-    console.log('Play_loadDataLog responseText', xmlHttp.responseText);
+    PlaybackDiagnostics('Live request status: ' + Number(xmlHttp.status));
 }
 
 function Play_loadDataError() {
@@ -1187,8 +1290,7 @@ function Play_loadDataError() {
         Play_loadingDataTry++;
         if (Play_loadingDataTry < Play_loadingDataTryMax + (Play_RestoreFromResume ? 7 : 0)) {
             Play_loadingDataTimeout += 250;
-            if (Play_RestoreFromResume) window.setTimeout(Play_loadDataRequest, 500);
-            else Play_loadDataRequest();
+            Play_RetryLater(Play_loadDataRequest, 500);
         } else {
             if (Main_IsNotBrowser) Play_loadDataErrorFinish();
             else Play_loadDataSuccessFake();
@@ -1284,7 +1386,7 @@ function Play_loadDataSuccess(responseText) {
             Play_tokenResponse = JSON.parse(responseText).data.streamPlaybackAccessToken;
         } catch (e) {
             Play_tokenResponse = null;
-            console.log('Play_loadDataSuccess e ' + e);
+            PlaybackDiagnostics('Playback operation failed');
         }
 
         Play_state = Play_STATE_LOADING_PLAYLIST;
@@ -1313,80 +1415,46 @@ function Play_loadDataSuccess(responseText) {
     }
 }
 
-function Play_extractQualities(input) {
-    var Band,
-        codec,
-        result = [],
-        TempId = '',
-        tempCount = 1,
-        Resolution;
-
-    var streams = Play_extractStreamDeclarations(input);
-
-    for (var i = 0; i < streams.length; i++) {
-        TempId = streams[i].split('NAME="')[1].split('"')[0];
-        Band = Play_extractBand(streams[i].split('BANDWIDTH=')[1].split(',')[0]);
-        codec = Play_extractCodec(streams[i].split('CODECS="')[1].split('.')[0]);
-        Resolution = streams[i].split('RESOLUTION=')[1].split(',')[0];
-
-        if (!result.length) {
-            if (TempId.indexOf('ource') === -1) TempId = TempId + ' | source';
-            else TempId = TempId.replace('(', ' | ').replace(')', '');
-            result.push({
-                id: TempId,
-                band: Band,
-                codec: codec,
-                resolution: Resolution,
-                url: streams[i].split('\n')[2]
-            });
-        } else if (result[i - tempCount].id !== TempId && result[i - tempCount].id !== TempId + ' | source') {
-            result.push({
-                id: TempId,
-                band: Band,
-                codec: codec,
-                resolution: Resolution,
-                url: streams[i].split('\n')[2]
-            });
-        } else tempCount++;
-    }
-
-    // This build targets the 2016 KU6000: keep AVC renditions within FHD.
-    result = result.filter(function (quality) {
-        var dimensions = quality.resolution.split('x');
-        return quality.codec === ' | avc' && Number(dimensions[0]) <= 1920 && Number(dimensions[1]) <= 1080;
-    });
-
-    result.sort(function (a, b) {
-        var ah = 0;
-        var bh = 0;
-
-        if (a.resolution && a.resolution.indexOf('x') !== -1) ah = parseInt(a.resolution.split('x')[1]) || 0;
-        if (b.resolution && b.resolution.indexOf('x') !== -1) bh = parseInt(b.resolution.split('x')[1]) || 0;
-
-        if (ah !== bh) return bh - ah;
-
-        var ab = parseFloat((a.band || '').replace(' | ', '').replace('Mbps', '')) || 0;
-        var bb = parseFloat((b.band || '').replace(' | ', '').replace('Mbps', '')) || 0;
-        return bb - ab;
-    });
-
-    // Pin the 'source' tag to the highest-resolution rendition (index 0).
-    // Twitch lists renditions in an arbitrary order, so the first-parsed entry
-    // (which received the 'source' tag above) is NOT reliably the highest
-    // quality. Left as-is, the default 'source' preference in Play_qualityChanged
-    // text-matches that mislabeled entry and can start the stream in a LOW
-    // quality - most visibly on the first stream after launch, when the
-    // preference is still the bare 'source'.
-    for (var s = 0; s < result.length; s++) {
-        result[s].id = result[s].id.replace(' | source', '');
-    }
-    if (result.length && result[0].id.indexOf('source') === -1) {
-        result[0].id = result[0].id + ' | source';
-    }
-
-    return result;
+function Play_ManifestAttributes(line) {
+    var attributes = {}, match;
+    var expression = /([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g;
+    while ((match = expression.exec(line))) attributes[match[1]] = match[2] === undefined ? match[3] : match[2];
+    return attributes;
 }
 
+function Play_extractQualities(input) {
+    var lines = String(input || '').replace(/\r\n?/g, '\n').split('\n');
+    var names = {}, result = [], seen = {}, i;
+    for (i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('#EXT-X-MEDIA:') !== 0) continue;
+        var media = Play_ManifestAttributes(lines[i]);
+        if (media.TYPE === 'VIDEO' && media['GROUP-ID']) names[media['GROUP-ID']] = media.NAME;
+    }
+    for (i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('#EXT-X-STREAM-INF:') !== 0) continue;
+        var attrs = Play_ManifestAttributes(lines[i]);
+        var dimensions = /^(\d+)x(\d+)$/.exec(attrs.RESOLUTION || '');
+        if (!dimensions || !/(^|,)\s*avc[13]\./.test(attrs.CODECS || '')) continue;
+        var width = Number(dimensions[1]), height = Number(dimensions[2]);
+        if (!width || !height || width > 1920 || height > 1080) continue;
+        var j = i + 1;
+        while (j < lines.length && !lines[j].trim()) j++;
+        var url = (lines[j] || '').trim();
+        if (!url || url.charAt(0) === '#' || seen[url]) continue;
+        seen[url] = true;
+        var fps = Math.round(Number(attrs['FRAME-RATE']) || 0);
+        var label = names[attrs.VIDEO] || attrs.NAME || height + 'p' + (fps > 30 ? fps : '');
+        label = label.replace(/\s*(?:\|\s*source|\(source\))/gi, '');
+        result.push({id: label, band: Play_extractBand(attrs.BANDWIDTH), codec: ' | avc',
+            resolution: attrs.RESOLUTION, url: url});
+    }
+    result.sort(function (a, b) {
+        return Number(b.resolution.split('x')[1]) - Number(a.resolution.split('x')[1]) ||
+            parseFloat(b.band.replace(' | ', '')) - parseFloat(a.band.replace(' | ', '')) || 0;
+    });
+    if (result.length) result[0].id += ' | source';
+    return result;
+}
 
 function Play_extractBand(input) {
     input = parseInt(input);
@@ -1403,6 +1471,7 @@ function Play_extractCodec(input) {
 function Play_extractStreamDeclarations(input) {
     var result = [];
 
+    input = input.replace(/\r\n?/g, '\n');
     var myRegexp = /#EXT-X-MEDIA:(.)*\n#EXT-X-STREAM-INF:(.)*\n(.)*/g;
     var marray;
     while ((marray = myRegexp.exec(input))) result.push(marray[0]);
@@ -1420,12 +1489,13 @@ function Play_qualityChanged() {
     Play_qualityIndex = 0;
     Play_playingUrl = Play_qualities[0].url;
 
+    var preference = Play_QualityPreference(Play_quality);
     for (var i = 0; i < Play_getQualitiesCount(); i++) {
-        if (Play_qualities[i].id === Play_quality) {
+        if (Play_QualityPreference(Play_qualities[i].id) === preference) {
             Play_qualityIndex = i;
             Play_playingUrl = Play_qualities[i].url;
             break;
-        } else if (Play_qualities[i].id.indexOf(Play_quality) !== -1) {
+        } else if (Play_qualities[i].id.indexOf(preference) !== -1) {
             //make shore to set a value before break out
             Play_qualityIndex = i;
             Play_playingUrl = Play_qualities[i].url;
@@ -1439,7 +1509,6 @@ function Play_qualityChanged() {
     Play_SetHtmlQuality('stream_quality', true);
 
     Play_state = Play_STATE_PLAYING;
-    console.log('Play_qualityChanged before Play_onPlayer:', '\n' + '\n"' + Play_playingUrl + '"\n');
 
     Play_BufferPercentage = 0;
     Play_onPlayerCounter = 0;
@@ -1448,6 +1517,11 @@ function Play_qualityChanged() {
         Play_onPlayer();
     }
     //Play_PannelEndStart(1);
+}
+
+function Play_QualityPreference(label) {
+    var match = String(label || '').match(/\d+p\d*/);
+    return match ? match[0] : 'source';
 }
 
 var Play_listener = {
@@ -1538,7 +1612,6 @@ function Play_onPlayer() {
     // Play_showBufferDialog();
 
     console.log('Play_onPlayer:', 'date: ' + new Date());
-    console.log('Play_onPlayer:', '\n' + '\n"' + Play_playingUrl + '"\n');
 
     if (Main_IsNotBrowser) {
         Play_loadChat();
@@ -1552,7 +1625,7 @@ function Play_onPlayer() {
                 //Disabled closed caption as isn't properly supported by all devices
                 // Play_avplay.setSilentSubtitle(true);
             } catch (e) {
-                console.log('PlayVod_onPlayer open ' + e);
+                PlaybackDiagnostics('Playback operation failed');
             }
 
             // Start stream in HLS player
@@ -1573,21 +1646,23 @@ function Play_PlayNativeLive(url) {
         Play_ShowBlackOverlay();
         // Play_OpenUrl (inside Play_StopAndCloseAndPlay) switches visibility to avplay
         Play_StopAndCloseAndPlay(url);
+        var attempt = ++Play_nativeAttempt;
+        var session = Play_sessionId;
         Play_offsettime = Play_oldcurrentTime;
 
         try {
             Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', Play_Buffer);
             Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', Play_Buffer);
         } catch (e) {
-            console.log('Play_PlayNativeLive setBufferingParam ' + e);
+            PlaybackDiagnostics('Playback operation failed');
         }
 
         Play_SetFullScreen(Play_isFullScreen);
         Play_avplay.setListener(Play_listener);
-        Play_onPlayerCounter = 0;
 
         Play_avplay.prepareAsync(
             function () {
+                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
                 console.log('Play_avplay.prepareAsync Live OK:', 'date: ' + new Date());
                 Play_avplay.play();
                 Play_HideBufferDialog();
@@ -1600,16 +1675,19 @@ function Play_PlayNativeLive(url) {
                 Play_streamCheckId = window.setInterval(Play_PlayerCheck, Play_PlayerCheckInterval);
             },
             function () {
+                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
                 console.log('Play_avplay.prepareAsync Live NOK:', 'date: ' + new Date());
                 Play_onPlayerCounter++;
-                if (Play_onPlayerCounter < 2) Play_PlayNativeLive(url);
+                if (Play_onPlayerCounter < 2) Play_RetryLater(function () {
+                    if (attempt === Play_nativeAttempt && Play_isOn && !Play_LiveUseHls) Play_PlayNativeLive(url);
+                }, 750);
                 else if (Play_qualityIndex < Play_getQualitiesCount() - 1) Play_DropOneQuality();
                 else if (Play_HlsSupported) Play_UseHlsFallbackLive('prepare-failed');
                 else Play_CheckEndStart();
             }
         );
     } catch (e) {
-        console.log('Play_PlayNativeLive error ' + e);
+        PlaybackDiagnostics('Playback operation failed');
         Play_CheckEndStart();
     }
 }
@@ -1625,7 +1703,7 @@ function Play_UseHlsFallbackLive(reason) {
     try {
         Play_StopAndClose();
     } catch (e) {
-        console.log('Play_UseHlsFallbackLive stop error', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 
     Play_onPlayerCounter = 0;
@@ -1687,14 +1765,14 @@ function Play_isIdleOrPlaying() {
     if (Main_IsNotBrowser) {
         var state;
         try {
-            // state = Play_avplay.getState();
+            state = Play_avplay.getState();
         } catch (error) {
             console.error('Play_isIdleOrPlaying', error);
 
             try {
                 // Play_avplay.close();
             } catch (e) {
-                console.log('Play_isIdleOrPlaying close', e);
+                PlaybackDiagnostics('Playback operation failed');
             }
 
             //on error reset all player status and restart the player
@@ -1760,8 +1838,8 @@ function Play_isNotplaying() {
     if (PlayVod_isOn && PlayVod_useHls) return !Play_avplay_hls_player || Play_avplay_hls_player.paused;
     // Clips always play on the <video> element
     if (PlayClip_isOn) return !Play_avplay_hls_player || Play_avplay_hls_player.paused;
-    if (Play_isOn) {
-        if (Play_LiveUseHls) return !Play_avplay_hls_player || Play_avplay_hls_player.paused;
+    if (Play_isOn || PlayVod_isOn) {
+        if (Play_UsesVideo()) return !Play_avplay_hls_player || Play_avplay_hls_player.paused;
         try {
             return Play_avplay.getState() !== 'PLAYING';
         } catch (e) {
@@ -1864,6 +1942,7 @@ function Play_PreshutdownStream(closePlayer) {
 }
 
 function Play_offPlayer() {
+    Play_InvalidateSession();
     if (Main_IsNotBrowser) {
         Play_StopAndClose();
     }
@@ -2160,11 +2239,9 @@ function Play_KeyPause(PlayVodClip) {
         if (Main_IsNotBrowser) {
             try {
                 webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
-                if (PlayVodClip === 2 && PlayVod_useHls && Play_avplay_hls_player) Play_avplay_hls_player.play();
-                else if (PlayVodClip === 3 && Play_avplay_hls_player) Play_avplay_hls_player.play();
-                else if (Play_avplay_hls_player) Play_avplay_hls_player.play();
+                Play_ActivePlayer().play();
             } catch (e) {
-                console.log('Play_avplay.pause: ' + e);
+                PlaybackDiagnostics('Playback operation failed');
                 return;
             }
         }
@@ -2189,11 +2266,9 @@ function Play_KeyPause(PlayVodClip) {
         if (Main_IsNotBrowser) {
             try {
                 webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON);
-                if (PlayVodClip === 2 && PlayVod_useHls && Play_avplay_hls_player) Play_avplay_hls_player.pause();
-                else if (PlayVodClip === 3 && Play_avplay_hls_player) Play_avplay_hls_player.pause();
-                else if (Play_avplay_hls_player) Play_avplay_hls_player.pause();
+                Play_ActivePlayer().pause();
             } catch (e) {
-                console.log('Play_avplay.pause: ' + e);
+                PlaybackDiagnostics('Playback operation failed');
                 return;
             }
         }
@@ -2735,7 +2810,6 @@ function Play_KeyReturn(is_vod) {
 }
 
 function Play_PlayHLSUrl(url) {
-    console.log('Play_PlayHLSUrl url:', url);
 
     if (!url) {
         console.error('HLS URL пустой!');
@@ -2759,6 +2833,7 @@ function Play_PlayHLSUrl(url) {
 
         // Убираем старый <video>
         if (Play_avplay_hls_player) {
+            Play_avplay_hls_player.playbackDisposed = true;
             Play_avplay_hls_player.style.visibility = 'hidden';
             Play_avplay_hls_player.pause();
             Play_SetHlsVisible(false);
@@ -2775,7 +2850,7 @@ function Play_PlayHLSUrl(url) {
         Play_SetHlsVisible(true);
         Play_avplay_hls_player.play();
     } catch (e) {
-        console.error('Ошибка запуска HLS:', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
@@ -2783,7 +2858,6 @@ function Play_PlayHLSUrl(url) {
 // <video> element. hls.js cannot handle progressive MP4, so we set video.src
 // directly and let the browser/Tizen webview play it natively.
 function Play_PlayProgressiveUrl(url) {
-    console.log('Play_PlayProgressiveUrl url:', url);
 
     if (!url) {
         console.error('Play_PlayProgressiveUrl empty url');
@@ -2800,7 +2874,7 @@ function Play_PlayProgressiveUrl(url) {
             try {
                 hls.destroy();
             } catch (e) {
-                console.log('Play_PlayProgressiveUrl hls destroy', e);
+                PlaybackDiagnostics('Playback operation failed');
             }
             hls = null;
         }
@@ -2815,7 +2889,7 @@ function Play_PlayProgressiveUrl(url) {
         Play_SetHlsVisible(true);
         Play_avplay_hls_player.play();
     } catch (e) {
-        console.error('Play_PlayProgressiveUrl error:', e);
+        PlaybackDiagnostics('Playback operation failed');
     }
 }
 
@@ -3194,6 +3268,7 @@ function Play_MakeControls() {
                 Play_hidePanel();
                 Play_quality = Play_qualities[Play_qualityIndex].id;
                 Play_qualityPlaying = Play_quality;
+                Main_setItem('Play_quality', Play_QualityPreference(Play_quality));
                 Play_playingUrl = Play_qualities[Play_qualityIndex].url;
                 Play_SetHtmlQuality('stream_quality');
                 Play_onPlayer();

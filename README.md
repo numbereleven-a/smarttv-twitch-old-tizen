@@ -9,7 +9,7 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Package version | 4.0.4 |
+| Package version | 4.0.5 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Language | [Русская версия](README_RU.md) |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
@@ -30,6 +30,8 @@ You can alternatively clone this repository and build from source. The app is no
 ## Requirements and compatibility
 
 The confirmed configuration is the KU6000/Tizen 2.4.0 above. The app needs a Samsung Tizen Web Application runtime with working MediaSource (MSE), separate H.264/AVC and AAC MP4 SourceBuffers, hardware decoding for the selected rendition, and network access to Twitch's APIs and stream CDN. The tested live renditions used H.264 and AAC. The TV must also accept a WGT signed for that device.
+
+The app remembers the last live quality explicitly selected by the user. The initial preference on first launch is 720p.
 
 The app manifest's Tizen 2.3 minimum is an installation declaration, not proof of playback on every Tizen 2.3 TV. Other models, chipsets, firmware versions, codecs, sustained playback durations, and resolutions have not been verified. A positive `MediaSource.isTypeSupported()` result alone does not establish compatibility.
 
