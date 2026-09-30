@@ -58,6 +58,8 @@ var PlayVod_hlsSeekApplied = false;
 //Variable initialization end
 
 function PlayVod_Start() {
+    document.getElementById('reload_button').style.display = 'none';
+    Main_textContent('stream_live_delay', '');
     Play_InvalidateSession();
     Play_showBufferDialog();
     Play_HideEndDialog();
@@ -952,6 +954,7 @@ function PlayVod_showPanel(autoHide) {
 function PlayVod_IconsBottonResetFocus() {
     PlayVod_PanelY = 1;
     PlayClip_EnterPos = 0;
+    Play_ReloadFocused = false;
     PlayVod_IconsBottonFocus();
 }
 
@@ -961,6 +964,7 @@ function PlayVod_IconsBottonFocus() {
         return;
     }
     Main_RemoveClass('pause_button', 'progress_bar_div_focus');
+    Main_RemoveClass('reload_button', 'progress_bar_div_focus');
     Main_RemoveClass('next_button', 'progress_bar_div_focus');
     Main_RemoveClass('back_button', 'progress_bar_div_focus');
     Main_RemoveClass('progress_bar_div', 'progress_bar_div_focus');
@@ -975,7 +979,9 @@ function PlayVod_IconsBottonFocus() {
         }
     } else if (PlayVod_PanelY === 1) {
         //pause/next/back buttons
-        if (!PlayClip_EnterPos) {
+        if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn && Play_ReloadFocused) {
+            Main_AddClass('reload_button', 'progress_bar_div_focus');
+        } else if (!PlayClip_EnterPos) {
             //pause
             Main_AddClass('pause_button', 'progress_bar_div_focus');
         } else if (PlayClip_EnterPos === 1) {

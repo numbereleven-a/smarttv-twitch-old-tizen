@@ -22,14 +22,16 @@ function check(name, fn) {
 function env() {
   const stats = {nativePause:0,nativePlay:0,videoPause:0,videoPlay:0,
     destroy:0,stopLoad:0,recover:0,warning:0,prepare:0,drop:0,fallback:0,
-    terminal:0,requests:[],logs:[],pendingPrepare:[],timers:[]};
+    terminal:0,requests:[],logs:[],pendingPrepare:[],timers:[],intervals:new Map()};
+  let intervalId=0;
   const noop = function () {};
   function element(tag) {
     const listeners = {};
-    return {tagName:tag,style:{},classList:{add:noop,remove:noop},listeners,
+    const classes=new Set();
+    return {tagName:tag,style:{},classList:{add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x)},listeners,
       currentTime:0,paused:true,readyState:4,duration:600,buffered:{length:0},
       videoWidth:1280,videoHeight:720,
-      appendChild:noop,remove:noop,removeAttribute:noop,load:noop,setAttribute:noop,
+      appendChild:child=>{if(child.id)elements[child.id]=child;},remove:noop,removeAttribute:noop,load:noop,setAttribute:noop,
       getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),
       addEventListener(name, fn) { (listeners[name] ||= []).push(fn); },
       removeEventListener:noop,
@@ -70,19 +72,26 @@ function env() {
     console:Object.fromEntries(['log','error','trace','warn'].map(k=>[k,(...args)=>stats.logs.push(args)])),
     XMLHttpRequest:XHR,Main_IsNotBrowser:true,Main_isReleased:false,
     Main_values:{Play_selectedChannel:'channel_a',vodOffset:0},navigator:{onLine:true},
-    addEventListener:noop,setTimeout:(fn)=>{stats.timers.push(fn);return stats.timers.length;},clearTimeout:noop,setInterval:()=>1,clearInterval:noop,
+    addEventListener:noop,setTimeout:(fn)=>{stats.timers.push(fn);return stats.timers.length;},clearTimeout:noop,
+    setInterval:fn=>{stats.intervals.set(++intervalId,fn);return intervalId;},clearInterval:id=>stats.intervals.delete(id),
     getComputedStyle:x=>x.style,PlaybackDiagnostics:noop,
     Main_RandomInt:()=>42,Settings_Obj_default:()=>0,
     Main_startsWith:(a,b)=>a.indexOf(b)===0,Main_A_includes_B:(a,b)=>a.includes(b),
     localStorage:{getItem:()=>null,setItem:noop},
-    STR_SOURCE:'source',STR_SPACE:' ',STR_WATCHING:'watching',
+    STR_SOURCE:'source',STR_SPACE:' ',STR_BR:'<br>',STR_WATCHING:'watching',STR_REPLAY:'Replay',STR_RELOAD:'Reload',
+    KEY_UP:38,KEY_DOWN:40,
     webapis:{appcommon:{setScreenSaver:noop,AppCommonScreenSaverState:{SCREEN_SAVER_OFF:0,SCREEN_SAVER_ON:1}}},
     PlayClip_isOn:false,PlayClip_streamCheckId:null,PlayClip_PlayerCheck:noop,
     ChatLive_MessagesRunAfterPause:noop,Chat_Init:noop,
-    Main_innerHTML:noop,Main_textContent:noop,Main_setItem:noop
+    Main_innerHTML:(id,text)=>document.getElementById(id).innerHTML=text,
+    Main_textContent:(id,text)=>document.getElementById(id).textContent=text,Main_setItem:noop,
+    Main_AddClass:(id,name)=>document.getElementById(id).classList.add(name),
+    Main_RemoveClass:(id,name)=>document.getElementById(id).classList.remove(name),
+    Main_ShowElement:id=>document.getElementById(id).classList.remove('hide'),
+    Main_HideElement:id=>document.getElementById(id).classList.add('hide')
   };
   c.window=c;vm.createContext(c);
-  for (const file of ['app/general/Fmp4TrackIsolation.js','app/general/LegacyFmp4Buffers.js',
+  for (const file of ['app/languages/0_Strings.js','app/general/Fmp4TrackIsolation.js','app/general/LegacyFmp4Buffers.js',
                       'app/specific/Play.js','app/specific/PlayVod.js']) {
     vm.runInContext(read(file),c,{filename:file});
   }
@@ -237,6 +246,84 @@ check('Requests from a closed and reopened same channel are rejected',()=>{
 check('A master without EXT-X-MEDIA or BANDWIDTH still keeps a valid rendition',()=>{
   const {c}=env();const q=c.Play_extractQualities('#EXTM3U\r\n#EXT-X-STREAM-INF:CODECS="avc1.4d401f,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=60\r\nhttps://example.invalid/720.m3u8');
   assert.equal(q.length,1);assert.equal(q[0].id,'720p60 | source');
+});
+check('Reload gets a fresh token for the same channel and retains the playing quality',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;c.Play_LiveUseHls=true;
+  c.Play_qualityPlaying='1080p60';c.Play_quality='720p';
+  c.Main_values.Play_selectedChannel_id='123';c.use_proxy=false;c.Play_Headers=[];
+  c.Play_live_token='{"channel":"%x"}';c.Play_state=c.Play_STATE_LOADING_TOKEN;
+  c.Play_selectedChannel_id_Old='previous_channel';
+  c.Play_loadDataRequest();const oldRequest=stats.requests[0];
+  c.initHLSPlayer();const oldPlayer=c.hls;const oldVideo=c.Play_avplay_hls_player;
+  c.Play_RetryLater(()=>{throw new Error('A stale retry ran');},100);
+  const staleRetry=stats.timers[stats.timers.length-1];
+  // Metadata, chat and UI boundaries; Play_Start and the token request remain real.
+  for(const name of ['Play_ResetProxy','Main_empty','Main_SaveValues','UserLiveFeed_Hide',
+    'UserLiveFeed_SetFeedPicText','ChatLive_Clear','Play_updateStreamInfoStart','Play_updateStreamInfo',
+    'PlayClip_UpdateGameInfo','Play_IconsResetFocus','PlayClip_HideShowNext','Main_handleKeyUp'])c[name]=()=>{};
+  c.IMG_404_LOGO_TEMP='';c.PlayClip_qualities=[];
+  c.Play_ReloadLive();
+  assert.ok(oldRequest.aborted);assert.equal(stats.destroy,1);assert.ok(oldVideo.playbackDisposed);
+  assert.equal(c.Main_values.Play_selectedChannel,'channel_a');assert.equal(c.Main_values.Play_selectedChannel_id,'123');
+  assert.equal(c.Play_quality,'1080p60');assert.equal(c.Play_qualityPlaying,'1080p60');
+  assert.equal(c.Play_tokenResponse,0);assert.equal(c.Play_playlistResponse,0);
+  assert.equal(c.Play_selectedChannel_id_Old,null);staleRetry();
+  assert.equal(stats.requests.length,2);assert.equal(stats.requests[1].method,'POST');
+  const count=stats.requests.length;
+  oldRequest.respond(JSON.stringify({data:{streamPlaybackAccessToken:{value:'TEST_OLD',signature:'TEST_OLD'}}}));
+  assert.equal(stats.requests.length,count);
+  oldPlayer.trigger(c.Hls.Events.ERROR,{fatal:true,type:c.Hls.ErrorTypes.MEDIA_ERROR});
+  assert.equal(stats.terminal,0);
+  c.Play_PlayHLSUrl('https://example.invalid/fresh.m3u8');
+  assert.notEqual(c.hls,oldPlayer);assert.equal(c.hls.url,'https://example.invalid/fresh.m3u8');
+  c.Play_Playing=true;oldVideo.dispatch('pause');assert.equal(c.Play_Playing,true);
+});
+check('Live controls focus Reload with Right and activate it with OK; Left returns to Play',()=>{
+  const {c}=env();c.Play_isOn=true;c.PlayVod_PanelY=1;c.PlayClip_EnterPos=0;
+  c.KEY_LEFT=37;c.KEY_RIGHT=39;c.KEY_ENTER=13;c.UserLiveFeed_isFeedShow=()=>false;
+  c.Play_isPanelShown=()=>true;
+  let reload=0,pause=0;c.Play_ReloadLive=()=>reload++;c.Play_KeyPause=()=>pause++;
+  c.Play_handleKeyDown({keyCode:39});
+  assert.ok(c.document.getElementById('reload_button').classList.contains('progress_bar_div_focus'));
+  c.Play_handleKeyDown({keyCode:13});assert.equal(reload,1);assert.equal(pause,0);
+  c.Play_handleKeyDown({keyCode:37});c.Play_handleKeyDown({keyCode:13});
+  assert.equal(pause,1);assert.equal(reload,1);
+  c.PlayVod_isOn=true;c.Play_ReloadFocused=true;c.PlayVod_IconsBottonFocus();
+  assert.ok(!c.document.getElementById('reload_button').classList.contains('progress_bar_div_focus'));
+  assert.ok(c.document.getElementById('pause_button').classList.contains('progress_bar_div_focus'));
+});
+check('The live error dialog offers Reload and skips the hidden VOD action',()=>{
+  const {c}=env();c.Play_isOn=true;c.Play_EndSet(1);
+  assert.equal(c.Play_Endcounter,0);assert.equal(c.document.getElementById('dialog_end_replay_text').textContent,'Reload');
+  c.KEY_LEFT=37;c.KEY_RIGHT=39;c.KEY_ENTER=13;c.UserLiveFeed_isFeedShow=()=>false;
+  c.Play_isEndDialogVisible=()=>true;c.Play_EndFocus=true;c.UserLiveFeed_Hide=()=>{};
+  c.STR_IS_OFFLINE='';c.STR_BR='';c.STR_STREAM_END_EXIT='';
+  c.Play_handleKeyDown({keyCode:39});assert.equal(c.Play_Endcounter,2);
+  c.Play_handleKeyDown({keyCode:37});assert.equal(c.Play_Endcounter,0);
+  let reload=0;c.Play_ReloadLive=()=>reload++;
+  c.Play_handleKeyDown({keyCode:13});assert.equal(reload,1);
+});
+check('Live delay is approximate and hidden for Native, VOD, missing metadata and stopped video',()=>{
+  const {c}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;
+  c.hls={latency:8.4,latestLevelDetails:{live:true}};
+  c.Play_UpdateLiveDelay();assert.equal(c.document.getElementById('stream_live_delay').textContent,'LIVE · ~8 s');
+  c.Play_LiveUseHls=false;c.Play_UpdateLiveDelay();assert.equal(c.document.getElementById('stream_live_delay').textContent,'');
+  c.Play_LiveUseHls=true;c.PlayVod_isOn=true;assert.equal(c.Play_GetLiveDelay(),null);
+  c.PlayVod_isOn=false;c.hls.latestLevelDetails=null;assert.equal(c.Play_GetLiveDelay(),null);
+  c.hls.latestLevelDetails={live:true};c.Play_avplay_hls_player.playbackDisposed=true;assert.equal(c.Play_GetLiveDelay(),null);
+});
+check('Debug is off by default, updates when enabled, redacts URLs/tokens and stops on disable',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/general/PlaybackDiagnostics.js'),c);
+  c.PlaybackDiagnostics('disabled error');assert.equal(stats.logs.length,0);assert.equal(stats.intervals.size,0);
+  c.Play_isOn=true;c.Play_LiveUseHls=true;c.Play_avplay_hls_player.currentTime=5;
+  c.PlaybackDiagnostics.setEnabled(true);assert.equal(stats.intervals.size,1);
+  c.PlaybackDiagnostics('failure https://example.invalid/test?token=TEST_SECRET token=TEST_SECRET');
+  const overlay=c.document.getElementById('playback_debug');
+  assert.ok(overlay.textContent.includes('[URL]'));assert.ok(!overlay.textContent.includes('TEST_SECRET'));
+  assert.ok(overlay.textContent.includes('time=5.0'));
+  c.Play_avplay_hls_player.currentTime=12;for(const tick of stats.intervals.values())tick();
+  assert.ok(overlay.textContent.includes('time=12.0'));
+  c.PlaybackDiagnostics.setEnabled(false);assert.equal(overlay.style.display,'none');assert.equal(stats.intervals.size,0);
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

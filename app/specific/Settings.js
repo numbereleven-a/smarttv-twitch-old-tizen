@@ -200,6 +200,10 @@ var Settings_value = {
         values: ['no', 'yes'],
         defaultValue: 1
     },
+    playback_debug: {
+        values: ['no', 'yes'],
+        defaultValue: 1
+    },
     player_mode: {
         //hls / native
         values: ['hls', 'native'],
@@ -387,6 +391,11 @@ function Settings_SetSettings() {
     Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_NATIVE];
 
     div += Settings_DivOptionWithSummary(key, STR_PLAYER_MODE, STR_PLAYER_MODE_SUMMARY);
+
+    key = 'playback_debug';
+    Settings_value_keys.push(key);
+    Settings_value[key].values = [STR_NO, STR_YES];
+    div += Settings_DivOptionWithSummary(key, STR_PLAYBACK_DEBUG, STR_PLAYBACK_DEBUG_SUMMARY);
 
     key = 'single_click_exit';
     Settings_value_keys.push(key);
@@ -588,6 +597,10 @@ function Settings_SetStrings() {
     Settings_DivOptionChangeLang(key, STR_PLAYER_MODE, STR_PLAYER_MODE_SUMMARY);
     Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_NATIVE];
 
+    key = 'playback_debug';
+    Settings_DivOptionChangeLang(key, STR_PLAYBACK_DEBUG, STR_PLAYBACK_DEBUG_SUMMARY);
+    Settings_value[key].values = [STR_NO, STR_YES];
+
     key = 'app_animations';
     Main_textContent(key + '_name', STR_APP_ANIMATIONS);
     Settings_value[key].values = [STR_NO, STR_YES];
@@ -617,6 +630,7 @@ function Settings_SetDefautls() {
     UserLiveFeed_NotifyTimeout = Settings_Obj_values('live_notification_time') * 1000;
     Play_SingleClickExit = Settings_Obj_default('single_click_exit');
     Play_PlayerMode = Settings_Obj_default('player_mode');
+    PlaybackDiagnostics.setEnabled(Settings_Obj_default('playback_debug'));
     Play_EndSettingsCounter = Settings_Obj_default('end_dialog_counter');
     Settings_ShowCounter(Settings_Obj_default('show_screen_counter'));
     Settings_proxy_set_start();
@@ -706,6 +720,8 @@ function Settings_SetDefault(position) {
         Settings_value.force_http_override.defaultValue = 1;
     } else if (position === 'player_mode') {
         Play_PlayerMode = Settings_Obj_default('player_mode');
+    } else if (position === 'playback_debug') {
+        PlaybackDiagnostics.setEnabled(Settings_Obj_default('playback_debug'));
     } else if (position === 'clock_offset') {
         Settings_SetClock();
         Main_updateclock();

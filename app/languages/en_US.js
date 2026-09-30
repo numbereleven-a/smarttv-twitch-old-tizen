@@ -177,6 +177,9 @@ function en_USLang() {
     STR_VIDEOS = 'Videos';
     STR_VIDEO = ' Video';
     STR_REPLAY = 'Replay';
+    STR_RELOAD = 'Reload';
+    STR_PLAYBACK_DEBUG = 'Playback debug log';
+    STR_PLAYBACK_DEBUG_SUMMARY = 'Show player state, buffers and recent errors on screen. Disabled by default.';
     STR_STREAM_END = 'exiting in ';
     STR_STREAM_END_EXIT = 'press "Return" to exit';
     STR_FEATURED = 'Featured';

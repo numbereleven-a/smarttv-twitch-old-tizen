@@ -9,7 +9,7 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Package version | 4.0.5 |
+| Package version | 4.0.6 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Language | [Русская версия](README_RU.md) |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
@@ -26,6 +26,18 @@ The release ZIP contains a WGT with its original Samsung signature files removed
 6. Install that newly signed WGT on the connected TV through Tizen Studio.
 
 You can alternatively clone this repository and build from source. The app is not distributed through Samsung Apps.
+
+### Updating an existing installation
+
+Version 4.0.6 keeps the application identifiers used by 4.0.5. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to 4.0.5 or 4.0.6.
+
+## Player controls
+
+- **Reload:** on the live player panel, press Right from Play/Pause and select Reload. It restarts the current channel with fresh playback data while retaining the selected quality. Reload is also available in the live playback error dialog.
+- **Live delay:** the panel displays an approximate delay such as `LIVE · ~8 s` for HLS live playback. This measures distance from the available HLS live edge, not total camera-to-TV latency. No value is displayed for Native playback or when the estimate is unavailable. Reload starts a fresh session near the live edge; it cannot remove Twitch's delivery delay.
+- **Playback debug log:** in Settings, under Player settings, enable Playback debug log to show the active player, quality, video state, buffer information and recent error codes. It is off by default. Turn it off to hide the overlay. Full playback URLs and authorization tokens are excluded from diagnostic output.
+
+The live stream player defaults to HLS for all channels. Selecting Native starts playback through Samsung AVPlay; an unsupported-format error switches the current stream to HLS when MSE is available.
 
 ## Requirements and compatibility
 

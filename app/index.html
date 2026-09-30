@@ -1423,6 +1423,7 @@
             }
 
             .pause_next_div {
+                position: relative;
                 text-align: center;
                 width: 95%;
                 margin-left: 2.5%;
@@ -2357,6 +2358,7 @@
                             <div id="stream_live_time" style="display: inline-block; width: auto"></div>
                             <div id="stream_live_viewers" style="display: inline-block; width: auto"></div>
                             <div id="stream_watching_time" class="playsideinfotext"></div>
+                            <div id="stream_live_delay" class="playsideinfotext"></div>
                         </div>
                     </div>
                     <div id="controls_holder" class="controls_holder"></div>
@@ -2405,6 +2407,10 @@
                                         <div id="next_button_text_title" class="next_info strokedeline"></div>
                                     </div>
                                 </div>
+                            </div>
+                            <div id="reload_button" class="pause_button" style="display: none; position: absolute; left: 54%; top: 0; width: 5%; padding-top: 0.375em; padding-bottom: 0.375em">
+                                <div><i class="pause_button3d icon-refresh"></i></div>
+                                <div id="reload_button_text" style="font-size: 0.7em"></div>
                             </div>
                         </div>
                     </div>

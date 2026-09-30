@@ -261,7 +261,7 @@ function Play_MediaFailure(video) {
     Play_Playing = false;
     Play_HideBufferDialog();
     Play_PannelEndStart(PlayVod_isOn ? 2 : (PlayClip_isOn ? 3 : 1));
-    Play_showWarningDialog('Playback failed. Select Replay to try again.');
+    Play_showWarningDialog('Playback failed. Select ' + (PlayVod_isOn || PlayClip_isOn ? STR_REPLAY : STR_RELOAD) + ' to try again.');
 }
 
 // Whether hls.js + MSE are usable on this device. Computed once, safely.
@@ -325,9 +325,11 @@ function initHLSPlayer() {
     video.style.backgroundColor = 'black';
     video.style.visibility = 'hidden';
     video.onplay = function() {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         Play_Playing = true;
     };
     video.onpause = function() {
+        if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         Play_Playing = false;
     };
     video.onplaying = function () {
@@ -417,7 +419,9 @@ function initHLSPlayer() {
         hls.on(Hls.Events.ERROR, function (event, data) {
             if (hls !== controller || Play_avplay_hls_player !== video) return;
             var errorType = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'mediaError' : data.type === Hls.ErrorTypes.NETWORK_ERROR ? 'networkError' : 'otherError';
-            PlaybackDiagnostics('HLS: ' + errorType + ' fatal=' + !!data.fatal);
+            var details = typeof data.details === 'string' && /^[a-zA-Z0-9]+$/.test(data.details) ? data.details : 'unknown';
+            PlaybackDiagnostics('HLS: ' + errorType + '/' + details + ' fatal=' + !!data.fatal +
+                (data.response && typeof data.response.code === 'number' ? ' HTTP=' + data.response.code : ''));
             if (!data.fatal) return;
             if (recoveries++ < 2 && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                 try {
@@ -732,9 +736,35 @@ function Play_SetChatFont() {
     Main_getElementById('chat_inner_container').style.fontSize = Play_ChatFontObj[Main_values.Chat_font_size_new] * 0.76 + '%';
 }
 
-function Play_Start() {
+var Play_ReloadFocused = false;
+
+function Play_ReloadLive() {
+    if (!Play_isOn || PlayVod_isOn || PlayClip_isOn) return;
+    var quality = Play_qualityPlaying || Play_quality;
+    PlaybackDiagnostics('Reload live channel');
+    Play_offPlayer();
+    Play_ClearPlay(true);
+    Play_EndDialogEnter = 0;
+    Play_selectedChannel_id_Old = null;
+    Play_ClearPlayer();
+    UserLiveFeed_Hide(true);
+    UserLiveFeed_PreventHide = false;
+    Play_Playing = false;
+    Play_qualities = [];
+    Play_playingUrl = '';
+    document.body.addEventListener('keydown', Play_handleKeyDown, false);
+    Play_Start(quality);
+}
+
+function Play_Start(reloadQuality) {
     Play_InvalidateSession();
-    Play_quality = localStorage.getItem('Play_quality') || '720p';
+    Play_quality = reloadQuality || localStorage.getItem('Play_quality') || '720p';
+    Play_qualityPlaying = Play_quality;
+    Play_ReloadFocused = false;
+    document.getElementById('reload_button').style.display = 'inline-block';
+    Main_textContent('reload_button_text', STR_RELOAD);
+    Main_textContent('stream_live_delay', '');
+    Main_innerHTML('pause_button', '<div><i class="pause_button3d icon-pause"></i></div>');
     // Play_showBufferDialog();
     Play_ResetProxy();
     Play_ShowBlackOverlay();
@@ -1568,6 +1598,7 @@ var Play_listener = {
         console.log('onstreamcompleted:', 'date: ' + new Date());
     },
     onerror: function (eventType) {
+        PlaybackDiagnostics('Native error: ' + eventType);
         console.log('onerror:', 'date: ' + new Date() + ' eventType: ' + eventType);
         if (eventType === 'PLAYER_ERROR_NOT_SUPPORTED_FORMAT') {
             // The native player can't decode this stream (2K/1440p-enabled channels
@@ -1972,6 +2003,41 @@ function Play_updateCurrentTime(currentTime) {
     if (Play_isPanelShown()) Play_RefreshWatchingtime();
 }
 
+function Play_GetLiveDelay() {
+    var video = Play_avplay_hls_player;
+    if (!Play_isOn || PlayVod_isOn || PlayClip_isOn || !Play_LiveUseHls || !hls ||
+        !hls.latestLevelDetails || !hls.latestLevelDetails.live || !video || video.playbackDisposed || video.readyState < 2) return null;
+    var delay = hls.latency;
+    return typeof delay === 'number' && isFinite(delay) && delay >= 0 ? delay : null;
+}
+
+function Play_UpdateLiveDelay() {
+    var delay = Play_GetLiveDelay();
+    Main_textContent('stream_live_delay', delay === null ? '' : 'LIVE \u00b7 ~' + Math.round(delay) + ' s');
+}
+
+function Play_GetDiagnosticStatus() {
+    var live = Play_isOn && !PlayVod_isOn && !PlayClip_isOn;
+    var quality = PlayVod_isOn ? PlayVod_qualityPlaying : (PlayClip_isOn ? PlayClip_qualityPlaying : Play_qualityPlaying);
+    var status = (live ? 'Live' : (PlayVod_isOn ? 'VOD' : 'Clip')) + ' | ' + (Play_UsesVideo() ? 'HLS/Video' : 'Native') + ' | ' + quality;
+    if (Play_UsesVideo()) {
+        var video = Play_avplay_hls_player;
+        if (video && !video.playbackDisposed) {
+            var ahead = 0, buffer = video.buffered;
+            for (var i = 0; i < buffer.length; i++) {
+                if (buffer.start(i) <= video.currentTime && buffer.end(i) > video.currentTime) ahead = buffer.end(i) - video.currentTime;
+            }
+            status += '\nready=' + video.readyState + ' paused=' + video.paused + ' time=' + video.currentTime.toFixed(1) +
+                ' buffer=' + ahead.toFixed(1) + 's ranges=' + buffer.length + ' video=' + video.videoWidth + 'x' + video.videoHeight;
+            var delay = Play_GetLiveDelay();
+            if (delay !== null) status += ' live-delay=~' + delay.toFixed(1) + 's';
+        }
+    } else if (Play_avplay) {
+        try { status += '\nstate=' + Play_avplay.getState() + ' buffering=' + Play_BufferPercentage + '%'; } catch (ignore) {}
+    }
+    return status;
+}
+
 function Play_ClearPlayer() {
     Play_hidePanel();
     Play_clearPause();
@@ -2145,6 +2211,7 @@ function Play_ForceHidePannel() {
 }
 
 function Play_RefreshWatchingtime() {
+    Play_UpdateLiveDelay();
     Main_innerHTML('stream_watching_time', ',' + STR_SPACE + STR_SPACE + STR_WATCHING + Play_timeMs(Play_oldcurrentTime));
 
     Main_innerHTML('stream_live_time', STR_SINCE + ('00:00'.indexOf(Play_created) !== -1 ? '00:00' : Play_streamLiveAt(Play_created)));
@@ -2404,7 +2471,9 @@ function Play_EndDialogPressed(PlayVodClip) {
     var canhide = true;
     if (Play_Endcounter === -1 && PlayClip_HasNext) PlayClip_PlayNext();
     else if (!Play_Endcounter) {
-        if (PlayVodClip === 2) {
+        if (PlayVodClip === 1) {
+            Play_ReloadLive();
+        } else if (PlayVodClip === 2) {
             if (!PlayVod_qualities.length) {
                 canhide = false;
                 Play_showWarningDialog(STR_CLIP_FAIL);
@@ -2484,15 +2553,17 @@ function Play_EndSet(PlayVodClip) {
     } else if (PlayVodClip === 1) {
         // play
         Play_EndIconsRemoveFocus();
-        Play_Endcounter = 2;
+        Play_Endcounter = 0;
         Play_EndIconsAddFocus();
         document.getElementById('dialog_end_-1').style.display = 'none';
-        document.getElementById('dialog_end_0').style.display = 'none';
+        document.getElementById('dialog_end_0').style.display = 'inline-block';
         document.getElementById('dialog_end_1').style.display = 'none';
+        Main_textContent('dialog_end_replay_text', STR_RELOAD);
 
         Play_EndTextsReset();
         Main_innerHTML('end_channel_name_text', Main_values.Play_selectedChannelDisplayname);
     } else if (PlayVodClip === 2) {
+        Main_textContent('dialog_end_replay_text', STR_REPLAY);
         // vod
         Play_EndIconsResetFocus();
         document.getElementById('dialog_end_-1').style.display = 'none';
@@ -2507,6 +2578,7 @@ function Play_EndSet(PlayVodClip) {
 
         Main_innerHTML('end_channel_name_text', Main_values.Main_selectedChannelDisplayname);
     } else if (PlayVodClip === 3) {
+        Main_textContent('dialog_end_replay_text', STR_REPLAY);
         // clip
         Play_EndIconsResetFocus();
         document.getElementById('dialog_end_-1').style.display = PlayClip_HasNext ? 'inline-block' : 'none';
@@ -2991,12 +3063,17 @@ function Play_handleKeyDown(e) {
                 } else if (Play_isPanelShown()) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 2) Play_BottomLeftRigt(1, -1);
+                    else if (PlayVod_PanelY === 1) {
+                        Play_ReloadFocused = false;
+                        PlayVod_IconsBottonFocus();
+                    }
                     Play_setHidePanel();
                 } else if (Play_isEndDialogVisible()) {
                     Play_EndTextClear();
                     Play_EndIconsRemoveFocus();
                     Play_Endcounter--;
-                    if (Play_Endcounter < (Main_values.Play_isHost ? 1 : 2)) Play_Endcounter = 3;
+                    if (!Main_values.Play_isHost && Play_Endcounter === 1) Play_Endcounter = 0;
+                    if (Play_Endcounter < (Main_values.Play_isHost ? 1 : 0)) Play_Endcounter = 3;
                     Play_EndIconsAddFocus();
                 } else {
                     Play_showPanel();
@@ -3012,12 +3089,17 @@ function Play_handleKeyDown(e) {
                 } else if (Play_isPanelShown()) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 2) Play_BottomLeftRigt(1, 1);
+                    else if (PlayVod_PanelY === 1) {
+                        Play_ReloadFocused = true;
+                        PlayVod_IconsBottonFocus();
+                    }
                     Play_setHidePanel();
                 } else if (Play_isEndDialogVisible()) {
                     Play_EndTextClear();
                     Play_EndIconsRemoveFocus();
                     Play_Endcounter++;
-                    if (Play_Endcounter > 3) Play_Endcounter = Main_values.Play_isHost ? 1 : 2;
+                    if (!Main_values.Play_isHost && Play_Endcounter === 1) Play_Endcounter = 2;
+                    if (Play_Endcounter > 3) Play_Endcounter = Main_values.Play_isHost ? 1 : 0;
                     Play_EndIconsAddFocus();
                 } else {
                     Play_showPanel();
@@ -3073,7 +3155,8 @@ function Play_handleKeyDown(e) {
                 } else if (Play_isPanelShown()) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 1) {
-                        if (!Play_isEndDialogVisible()) Play_KeyPause(1);
+                        if (Play_ReloadFocused) Play_ReloadLive();
+                        else Play_KeyPause(1);
                     } else Play_BottomOptionsPressed(1);
                     Play_setHidePanel();
                 } else if (UserLiveFeed_isFeedShow()) {

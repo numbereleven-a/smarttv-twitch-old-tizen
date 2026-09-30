@@ -48,6 +48,8 @@ var PlayClip_ExtraClipInfo =
 //Variable initialization end
 
 function PlayClip_Start() {
+    document.getElementById('reload_button').style.display = 'none';
+    Main_textContent('stream_live_delay', '');
     Play_showBufferDialog();
     Play_HideEndDialog();
     Play_ShowBlackOverlay();
