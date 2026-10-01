@@ -22,7 +22,7 @@ function check(name, fn) {
 function env() {
   const stats = {nativePause:0,nativePlay:0,videoPause:0,videoPlay:0,
     destroy:0,stopLoad:0,recover:0,warning:0,prepare:0,drop:0,fallback:0,
-    terminal:0,requests:[],logs:[],pendingPrepare:[],timers:[],intervals:new Map()};
+    terminal:0,requests:[],logs:[],pendingPrepare:[],pendingReady:[],timers:[],timerDelays:[],intervals:new Map()};
   let intervalId=0;
   const noop = function () {};
   function element(tag) {
@@ -72,7 +72,7 @@ function env() {
     console:Object.fromEntries(['log','error','trace','warn'].map(k=>[k,(...args)=>stats.logs.push(args)])),
     XMLHttpRequest:XHR,Main_IsNotBrowser:true,Main_isReleased:false,
     Main_values:{Play_selectedChannel:'channel_a',vodOffset:0},navigator:{onLine:true},
-    addEventListener:noop,setTimeout:(fn)=>{stats.timers.push(fn);return stats.timers.length;},clearTimeout:noop,
+    addEventListener:noop,setTimeout:(fn,delay)=>{stats.timers.push(fn);stats.timerDelays.push(delay);return stats.timers.length;},clearTimeout:noop,
     setInterval:fn=>{stats.intervals.set(++intervalId,fn);return intervalId;},clearInterval:id=>stats.intervals.delete(id),
     getComputedStyle:x=>x.style,PlaybackDiagnostics:noop,
     Main_RandomInt:()=>42,Settings_Obj_default:()=>0,
@@ -91,6 +91,7 @@ function env() {
     Main_HideElement:id=>document.getElementById(id).classList.add('hide')
   };
   c.window=c;vm.createContext(c);
+  c.PlaybackDiagnostics.error=noop;
   for (const file of ['app/languages/0_Strings.js','app/general/Fmp4TrackIsolation.js','app/general/LegacyFmp4Buffers.js',
                       'app/specific/Play.js','app/specific/PlayVod.js']) {
     vm.runInContext(read(file),c,{filename:file});
@@ -105,10 +106,11 @@ function env() {
   c.Play_showWarningDialog=()=>stats.warning++;
   c.Play_CheckEndStart=()=>stats.terminal++;
   c.Play_PannelEndStart=()=>stats.terminal++;
+  c.Play_PlayEndStart=()=>stats.terminal++;
   c.Play_avplay={stop:noop,close:noop,open:noop,setBufferingParam:noop,setListener:noop,
     getState:()=> 'PLAYING',getCurrentTime:()=>120000,
     pause(){stats.nativePause++;},play(){stats.nativePlay++;},
-    prepareAsync(ok,fail){stats.prepare++;stats.pendingPrepare.push(fail);}};
+    prepareAsync(ok,fail){stats.prepare++;stats.pendingPrepare.push(fail);stats.pendingReady.push(ok);}};
   c.Play_avplay_hls_player=element('video');
   return {c,stats,element};
 }
@@ -324,6 +326,104 @@ check('Debug is off by default, updates when enabled, redacts URLs/tokens and st
   c.Play_avplay_hls_player.currentTime=12;for(const tick of stats.intervals.values())tick();
   assert.ok(overlay.textContent.includes('time=12.0'));
   c.PlaybackDiagnostics.setEnabled(false);assert.equal(overlay.style.display,'none');assert.equal(stats.intervals.size,0);
+});
+check('Auto selects HLS for fMP4 before preparing Native and selects Native for TS',()=>{
+  for(const fmp4 of [true,false]) {
+    const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_AUTO;
+    c.Play_playingUrl='https://example.invalid/live.m3u8';
+    c.Play_onPlayer();assert.equal(stats.prepare,0);assert.equal(stats.requests.length,1);
+    stats.requests[0].respond('#EXTM3U\r\n'+(fmp4?'#EXT-X-MAP:URI="init.mp4"\r\n':'')+'#EXTINF:2,\r\nsegment.'+(fmp4?'mp4':'ts'));
+    assert.equal(c.Play_LiveUseHls,fmp4);assert.equal(stats.prepare,fmp4?0:1);
+    assert.equal(c.document.getElementById('stream_player_mode').textContent,fmp4?'Auto · HLS':'Auto · Native');
+    if(fmp4) {assert.ok(stats.videoPlay>0);assert.equal(c.hls.url,c.Play_playingUrl);}
+  }
+});
+check('Auto recovers from an IDLE Native prepare timeout and ignores a late success callback',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_AUTO;
+  c.Play_LiveUseHls=false;c.Play_playingUrl='https://example.invalid/live.m3u8';
+  c.Play_avplay.getState=()=> 'IDLE';c.Play_PlayNativeLive(c.Play_playingUrl);
+  assert.equal(stats.timerDelays[0],15000);
+  const lateSuccess=stats.pendingReady[0];stats.timers[0]();
+  assert.equal(c.Play_LiveUseHls,true);assert.ok(stats.videoPlay>0);
+  lateSuccess();assert.equal(stats.nativePlay,0);
+});
+check('Forced Native reports unsupported format without silently changing backend',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_NATIVE;c.Play_LiveUseHls=false;
+  c.Play_playingUrl='https://example.invalid/live.m3u8';
+  c.Play_PlayNativeLive(c.Play_playingUrl);
+  c.Play_listener.onerror('PLAYER_ERROR_NOT_SUPPORTED_FORMAT');
+  assert.equal(c.Play_LiveUseHls,false);assert.equal(c.hls,null);assert.equal(stats.terminal,1);assert.equal(stats.warning,1);
+  stats.pendingReady[0]();stats.timers[0]();assert.equal(stats.nativePlay,0);assert.equal(stats.terminal,1);
+});
+check('Obsolete Auto playlist requests cannot restart an earlier quality or closed channel',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_AUTO;
+  c.Play_playingUrl='https://example.invalid/720.m3u8';c.Play_AutoSelectPlayer(c.Play_playingUrl);
+  const old=stats.requests[0];c.Play_playingUrl='https://example.invalid/1080.m3u8';c.Play_AutoSelectPlayer(c.Play_playingUrl);
+  assert.ok(old.aborted);old.respond('#EXTM3U\n#EXTINF:2,\nsegment.ts');assert.equal(stats.prepare,0);
+  c.Play_InvalidateSession();stats.requests[1].respond('#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:2,\nsegment.mp4');
+  assert.equal(stats.videoPlay,0);assert.equal(stats.prepare,0);
+});
+check('Auto can use HLS when playlist detection fails; HLS mode does not need a preflight request',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_AUTO;
+  c.Play_playingUrl='https://example.invalid/live.m3u8';c.Play_onPlayer();stats.requests[0].ontimeout();
+  assert.equal(c.Play_LiveUseHls,true);assert.ok(stats.videoPlay>0);
+  c.Play_PlayerMode=c.Play_PLAYER_HLS;c.Play_LiveUseHls=true;const requests=stats.requests.length;
+  c.Play_onPlayer();assert.equal(stats.requests.length,requests);
+});
+check('The previous Native setting selects Auto and does not reset account storage',()=>{
+  const {c}=env();const stored=new Map([['player_mode','2'],['AddUser_UsernameArray','TEST_ACCOUNT_STATE']]);
+  c.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
+  vm.runInContext(read('app/specific/Settings.js'),c);
+  c.Main_getItemInt=(key,fallback)=>Number(c.localStorage.getItem(key)||fallback);
+  c.Settings_value.player_mode.defaultValue=c.Main_getItemInt('player_mode',c.Settings_value.player_mode.defaultValue)-1;
+  c.Settings_SetDefault('player_mode');assert.equal(c.Play_PlayerMode,c.Play_PLAYER_AUTO);
+  const fresh=env().c;vm.runInContext(read('app/specific/Settings.js'),fresh);
+  assert.equal(fresh.Settings_value.player_mode.defaultValue-1,fresh.Play_PLAYER_AUTO);
+  stored.set('player_mode','1');
+  c.Settings_value.player_mode.defaultValue=c.Main_getItemInt('player_mode',2)-1;
+  c.Settings_SetDefault('player_mode');assert.equal(c.Play_PlayerMode,c.Play_PLAYER_HLS);
+  assert.equal(stored.get('AddUser_UsernameArray'),'TEST_ACCOUNT_STATE');
+});
+check('Five timestamped errors stay in memory, include sanitized exception text and reset after restart',()=>{
+  const {c,stats}=env();const stored=new Map([['playback_error_history','OLD_HISTORY'],['account','TEST_ACCOUNT_STATE']]);
+  c.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)};
+  vm.runInContext(read('app/general/PlaybackDiagnostics.js'),c);
+  for(let i=0;i<7;i++)c.PlaybackDiagnostics.error('HLS','error_'+i,new Error('Cannot append fragment '+i));
+  assert.equal(stored.has('playback_error_history'),false);assert.equal(stored.get('account'),'TEST_ACCOUNT_STATE');
+  assert.equal(stats.logs.length,0);assert.equal(stats.intervals.size,0);
+  c.Play_isOn=true;c.PlaybackDiagnostics.setEnabled(true);
+  const current=c.document.getElementById('playback_debug');
+  assert.match(current.textContent,/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| HLS \| error_2/);
+  assert.equal((current.textContent.match(/\| HLS \| error_/g)||[]).length,5);
+  assert.ok(current.textContent.includes('Error: Cannot append fragment 6'));
+  c.PlaybackDiagnostics.setEnabled(false);
+  c.PlaybackDiagnostics.error('HLS','internalException',new Error('Failure https://example.invalid/?token=URL_SECRET token=TEST_SECRET Authorization: Bearer BEARER_SECRET'));
+  c.PlaybackDiagnostics.setEnabled(true);
+  assert.ok(current.textContent.includes('internalException'));assert.ok(current.textContent.includes('[URL]'));
+  assert.ok(!/URL_SECRET|TEST_SECRET|BEARER_SECRET/.test(current.textContent));
+  const next=env().c;next.localStorage=c.localStorage;
+  next.tizen={application:{getAppInfo:()=>({version:'4.0.8'})},systeminfo:{getCapability:()=> 'TEST_TIZEN'}};
+  next.webapis.productinfo={getModel:()=> 'TEST_TV_MODEL'};
+  vm.runInContext(read('app/general/PlaybackDiagnostics.js'),next);
+  next.Play_isOn=true;next.PlaybackDiagnostics.setEnabled(true);
+  const overlay=next.document.getElementById('playback_debug');
+  assert.ok(overlay.textContent.includes('APP: 4.0.8 | TV: TEST_TV_MODEL | Tizen: TEST_TIZEN'));
+  assert.ok(!overlay.textContent.includes('Last errors'));
+});
+check('Native startup uses the timeout selected in settings',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/Settings.js'),c);
+  c.Settings_value.native_prepare_timeout.defaultValue=3;
+  c.Settings_SetDefault('native_prepare_timeout');
+  c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_AUTO;c.Play_LiveUseHls=false;
+  c.Play_PlayNativeLive('https://example.invalid/live.m3u8');
+  assert.equal(stats.timerDelays[0],30000);
+});
+check('HLS internal exceptions pass their message to the diagnostic history',()=>{
+  const {c}=env();const errors=[];c.PlaybackDiagnostics.error=(...args)=>errors.push(args);
+  c.Play_isOn=true;c.Play_LiveUseHls=true;c.Play_PlayHLSUrl('https://example.invalid/live.m3u8');
+  const error=new Error('Failed to parse fragment');
+  c.hls.trigger(realHls.Events.ERROR,{type:realHls.ErrorTypes.OTHER_ERROR,details:'internalException',fatal:false,error});
+  assert.equal(errors[0][0],'HLS');assert.equal(errors[0][1],'internalException');assert.equal(errors[0][2],error);
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

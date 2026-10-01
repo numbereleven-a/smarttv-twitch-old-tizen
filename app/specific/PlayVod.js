@@ -672,6 +672,7 @@ var PlayVod_listener = {
         console.log('onstreamcompleted:', 'date: ' + new Date());
     },
     onerror: function (eventType) {
+        if (PlayVod_isOn) PlaybackDiagnostics.error('VOD Native', eventType);
         console.log('onerror:', 'date: ' + new Date() + ' eventType: ' + eventType);
         if (PlayVod_useHls || PlayVod_switchingToHls) return;
         if (eventType === 'PLAYER_ERROR_CONNECTION_FAILED' || eventType === 'PLAYER_ERROR_INVALID_URI') Play_PannelEndStart(2);
@@ -723,6 +724,7 @@ function PlayVod_BindHlsListeners() {
 
     Play_avplay_hls_player.onerror = function () {
         if (video.playbackDisposed || Play_avplay_hls_player !== video || !PlayVod_isOn || !PlayVod_useHls) return;
+        PlaybackDiagnostics.error('VOD Video', 'mediaError_' + (this.error ? this.error.code : 'unknown'));
         console.log('PlayVod HLS onerror');
         Play_MediaFailure(video);
     };

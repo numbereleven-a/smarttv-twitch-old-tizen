@@ -404,6 +404,7 @@ var PlayClip_listener = {
         console.log('onstreamcompleted:', 'date: ' + new Date());
     },
     onerror: function (eventType) {
+        if (PlayClip_isOn) PlaybackDiagnostics.error('Clip Native', eventType);
         console.log('onerror:', 'date: ' + new Date() + ' eventType: ' + eventType);
         if (eventType === 'PLAYER_ERROR_CONNECTION_FAILED' || eventType === 'PLAYER_ERROR_INVALID_URI') Play_PannelEndStart(3);
     }
@@ -554,7 +555,8 @@ function PlayClip_BindVideoListeners() {
     };
 
     Play_avplay_hls_player.onerror = function () {
-        if (!PlayClip_isOn) return;
+        if (!PlayClip_isOn || this.playbackDisposed || Play_avplay_hls_player !== this) return;
+        PlaybackDiagnostics.error('Clip Video', 'mediaError_' + (this.error ? this.error.code : 'unknown'));
         console.log('PlayClip video onerror');
         Play_onPlayerCounter++;
         if (Play_onPlayerCounter < 3) {

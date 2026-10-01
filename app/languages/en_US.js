@@ -179,7 +179,9 @@ function en_USLang() {
     STR_REPLAY = 'Replay';
     STR_RELOAD = 'Reload';
     STR_PLAYBACK_DEBUG = 'Playback debug log';
-    STR_PLAYBACK_DEBUG_SUMMARY = 'Show player state, buffers and recent errors on screen. Disabled by default.';
+    STR_PLAYBACK_DEBUG_SUMMARY = 'Show player state, buffers and the last five errors with time and exception text. History lasts until the app closes. The overlay is disabled by default.';
+    STR_NATIVE_PREPARE_TIMEOUT = 'Native start timeout (seconds)';
+    STR_NATIVE_PREPARE_TIMEOUT_SUMMARY = 'How long to wait for Native preparation. Auto switches to HLS after this time; Native shows an error. Default: 15 seconds. Applies to the next playback start.';
     STR_STREAM_END = 'exiting in ';
     STR_STREAM_END_EXIT = 'press "Return" to exit';
     STR_FEATURED = 'Featured';
@@ -464,9 +466,11 @@ function en_USLang() {
         "Some devices can't perform some HTTPS requests with may cause the player not to work, setting this will force some connections to use HTTP only, this may solve player and related issues";
     STR_PLAYER_MODE = 'Live stream player';
     STR_PLAYER_MODE_SUMMARY =
-        "Which player to use for live streams. HLS plays newer formats (e.g. 2K/1440p) at slightly higher latency, and on older devices without HLS support it automatically falls back to the native player. Native has lower latency, and on devices that support HLS it automatically switches to HLS for streams the native player can't decode (2K/fMP4) - so it's a safe low-latency choice.";
-    STR_PLAYER_MODE_HLS = 'hls';
-    STR_PLAYER_MODE_NATIVE = 'native';
+        'Auto (default) selects HLS for fMP4 and Native for ordinary streams, with HLS fallback if Native fails. HLS uses hls.js/MSE for all streams. Native forces Samsung AVPlay and may not support fMP4 streams on older TVs.';
+    STR_PLAYER_MODE_HLS = 'HLS';
+    STR_PLAYER_MODE_AUTO = 'Auto';
+    STR_PLAYER_MODE_NATIVE = 'Native';
+    STR_NATIVE_FAILED = 'Native playback failed. Select HLS or Auto in Player settings, then reload the channel.';
     STR_FORMAT_NOT_SUPPORTED =
         "This stream's format isn't supported by this device's player. Streamers using the new 2K/1440p format are delivered in fMP4, which older TVs cannot play in the native player.";
 }

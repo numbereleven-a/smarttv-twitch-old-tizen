@@ -9,7 +9,7 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Package version | 4.0.6 |
+| Package version | 4.0.8 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Language | [Русская версия](README_RU.md) |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
@@ -29,15 +29,23 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.0.6 keeps the application identifiers used by 4.0.5. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to 4.0.5 or 4.0.6.
+Version 4.0.8 keeps the application identifiers used by 4.0.5, 4.0.6 and 4.0.7. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 
 - **Reload:** on the live player panel, press Right from Play/Pause and select Reload. It restarts the current channel with fresh playback data while retaining the selected quality. Reload is also available in the live playback error dialog.
 - **Live delay:** the panel displays an approximate delay such as `LIVE · ~8 s` for HLS live playback. This measures distance from the available HLS live edge, not total camera-to-TV latency. No value is displayed for Native playback or when the estimate is unavailable. Reload starts a fresh session near the live edge; it cannot remove Twitch's delivery delay.
-- **Playback debug log:** in Settings, under Player settings, enable Playback debug log to show the active player, quality, video state, buffer information and recent error codes. It is off by default. Turn it off to hide the overlay. Full playback URLs and authorization tokens are excluded from diagnostic output.
+- **Active player:** the panel shows HLS, Native or Video. In Auto mode it shows the selected backend, such as `Auto · HLS`.
+- **Playback debug log:** in Settings, under Player settings, enable Playback debug log to show the app version, TV model, Tizen version, player state, buffers and recent errors. The overlay is off by default. The last five errors are kept in memory even while the overlay is off, with date and time from the TV clock, stage, code and exception text when available. They remain visible after Reload but are cleared when the app closes. Playback URLs and authorization tokens are redacted. No error file is created.
 
-The live stream player defaults to HLS for all channels. Selecting Native starts playback through Samsung AVPlay; an unsupported-format error switches the current stream to HLS when MSE is available.
+The live stream player has three modes:
+
+- **HLS:** hls.js/MSE for all channels on an MSE-capable TV.
+- **Auto (default for new installations):** checks the rendition playlist, selects HLS for streams with an initialization map (including Twitch fMP4), and starts ordinary streams through Samsung AVPlay. If Native fails or does not complete preparation within the configured Native start timeout (15 seconds by default), Auto switches to HLS when MSE is available.
+- **Native start timeout (seconds):** choose 10, 15, 20 or 30 seconds in Player settings. The value applies to the next Native playback start; it does not change the LIVE delay.
+- **Native:** forces Samsung AVPlay. It does not silently switch to HLS. Unsupported streams show an error suggesting HLS or Auto.
+
+The previous Native-with-fallback preference becomes Auto on update. An existing HLS preference remains HLS. The owner confirmed Auto selected HLS and played a live stream on KU6000/Tizen 2.4.0 in version 4.0.7. The new timeout setting and exception text in 4.0.8 have offline checks; verification on a physical TV is pending.
 
 ## Requirements and compatibility
 

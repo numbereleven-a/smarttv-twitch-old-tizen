@@ -20,6 +20,7 @@ var Play_isHost = false;
 var Play_FeedOldUserName = '';
 var Play_FeedPos = 0;
 var Play_Buffer = 2000;
+var Play_NativePrepareTimeout = 15;
 var Play_CurrentSpeed = 3;
 var Play_onPlayerCounter = 0;
 var Play_TizenVersion = 2.4;
@@ -213,12 +214,16 @@ var Play_sessionId = 0;
 var Play_requests = [];
 var Play_retryTimers = [];
 var Play_nativeAttempt = 0;
+var Play_autoRequest = null;
+var Play_AutoSelecting = false;
 
 function Play_InvalidateSession() {
     Play_sessionId++;
     Play_nativeAttempt++;
     var requests = Play_requests;
     Play_requests = [];
+    Play_autoRequest = null;
+    Play_AutoSelecting = false;
     for (var i = 0; i < requests.length; i++) {
         try { requests[i].abort(); } catch (ignore) {}
     }
@@ -274,15 +279,12 @@ try {
     Play_HlsSupported = false;
 }
 
-// Player selection: 0 = HLS (default), 1 = Native (avplay). Loaded in Play_PreStart.
-// HLS = use the HLS player when the device supports it, otherwise native.
-// Native = native player (lower latency) with automatic HLS fallback for fMP4/2K.
+// The stored old Native-with-fallback index remains Auto.
 var Play_PlayerMode = 0;
 var Play_PLAYER_HLS = 0;
-var Play_PLAYER_NATIVE = 1;
-// Effective player for the CURRENT live stream. Starts as Play_UseHlsForLive()
-// but can flip to true at runtime if the native player can't decode the stream
-// (fMP4/2K) and we fall back to HLS. Single source of truth for the live path.
+var Play_PLAYER_AUTO = 1;
+var Play_PLAYER_NATIVE = 2;
+// Effective player for the current stream, after Auto selection/fallback.
 var Play_LiveUseHls = false;
 var Play_black_overlay = null;
 var Play_BufferPercentage = 0;
@@ -372,6 +374,7 @@ function initHLSPlayer() {
     video.onerror = function () {
         if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
         PlaybackDiagnostics('VIDEO error: ' + (video.error ? video.error.code : 'unknown'));
+        PlaybackDiagnostics.error('Video', 'mediaError_' + (video.error ? video.error.code : 'unknown'));
         Play_MediaFailure(video);
     };
 
@@ -420,6 +423,7 @@ function initHLSPlayer() {
             if (hls !== controller || Play_avplay_hls_player !== video) return;
             var errorType = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'mediaError' : data.type === Hls.ErrorTypes.NETWORK_ERROR ? 'networkError' : 'otherError';
             var details = typeof data.details === 'string' && /^[a-zA-Z0-9]+$/.test(data.details) ? data.details : 'unknown';
+            PlaybackDiagnostics.error('HLS', details, data.error || data.err);
             PlaybackDiagnostics('HLS: ' + errorType + '/' + details + ' fatal=' + !!data.fatal +
                 (data.response && typeof data.response.code === 'number' ? ' HTTP=' + data.response.code : ''));
             if (!data.fatal) return;
@@ -453,6 +457,7 @@ function initHLSPlayer() {
         // dependency on a third-party server at startup.
         hls.attachMedia(video);
     } catch (e) {
+        PlaybackDiagnostics.error('HLS initialization', e.name || 'Error', e);
         PlaybackDiagnostics('HLS initialization failed');
         PlaybackDiagnostics('Playback operation failed');
         hls = null;
@@ -460,8 +465,7 @@ function initHLSPlayer() {
 }
 
 function Play_UseHlsForLive() {
-    if (Play_PlayerMode === Play_PLAYER_NATIVE) return false; // forced native
-    return Play_HlsSupported; // Auto and forced-HLS both require MSE support
+    return Play_PlayerMode === Play_PLAYER_HLS && Play_HlsSupported;
 }
 
 function Play_PreStart() {
@@ -828,6 +832,8 @@ function Play_Start(reloadQuality) {
     Play_playingTry = 0;
     Play_isOn = true;
     Play_LiveUseHls = Play_UseHlsForLive();
+    Play_AutoSelecting = Play_PlayerMode === Play_PLAYER_AUTO;
+    Play_UpdatePlayerLabel();
     // Play_Playing = false;
     Play_state = Play_STATE_LOADING_TOKEN;
     document.addEventListener('visibilitychange', Play_Resume, false);
@@ -1254,6 +1260,7 @@ function Play_loadDataRequest(skipProxy) {
             if (xmlHttp.readyState === 4) {
                 var requestIndex = Play_requests.indexOf(xmlHttp);
                 if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
+                if (xmlHttp.status !== 200) PlaybackDiagnostics.error(operation === Play_STATE_LOADING_TOKEN ? 'Live token' : 'Live playlist', 'HTTP_' + Number(xmlHttp.status));
                 if (xmlHttp.status === 200) {
                     Play_loadingDataTry = 0;
                     if (Play_isOn) Play_loadDataSuccess(xmlHttp.responseText);
@@ -1416,6 +1423,7 @@ function Play_loadDataSuccess(responseText) {
             Play_tokenResponse = JSON.parse(responseText).data.streamPlaybackAccessToken;
         } catch (e) {
             Play_tokenResponse = null;
+            PlaybackDiagnostics.error('Live token', 'invalidResponse');
             PlaybackDiagnostics('Playback operation failed');
         }
 
@@ -1598,28 +1606,18 @@ var Play_listener = {
         console.log('onstreamcompleted:', 'date: ' + new Date());
     },
     onerror: function (eventType) {
+        if (!Play_isOn || Play_LiveUseHls || Play_AutoSelecting) return;
         PlaybackDiagnostics('Native error: ' + eventType);
+        PlaybackDiagnostics.error('Native playback', eventType);
         console.log('onerror:', 'date: ' + new Date() + ' eventType: ' + eventType);
         if (eventType === 'PLAYER_ERROR_NOT_SUPPORTED_FORMAT') {
-            // The native player can't decode this stream (2K/1440p-enabled channels
-            // deliver every rendition as fMP4).
-            if (Play_HlsSupported) {
-                // MSE-capable device: silently switch to the HLS player so "Native"
-                // stays a safe low-latency choice that still plays fMP4 streams.
+            if (Play_PlayerMode === Play_PLAYER_AUTO && Play_HlsSupported) {
                 Play_UseHlsFallbackLive('not-supported-format');
             } else {
-                // Old device with no MSE: nothing can play it - tell the user and end.
-                Play_HideBufferDialog();
-                Play_IsWarning = true;
-                Play_showWarningDialog(STR_FORMAT_NOT_SUPPORTED);
-                window.setTimeout(function () {
-                    Play_IsWarning = false;
-                    Play_HideWarningDialog();
-                    if (Play_isOn) Play_CheckEndStart();
-                }, 4000);
+                Play_NativeFailure();
             }
         } else if (eventType === 'PLAYER_ERROR_CONNECTION_FAILED' || eventType === 'PLAYER_ERROR_INVALID_URI') {
-            Play_CheckEndStart();
+            Play_NativeFailure();
         }
     }
 };
@@ -1647,7 +1645,9 @@ function Play_onPlayer() {
     if (Main_IsNotBrowser) {
         Play_loadChat();
 
-        if (Play_LiveUseHls) {
+        if (Play_PlayerMode === Play_PLAYER_AUTO) {
+            Play_AutoSelectPlayer(Play_playingUrl);
+        } else if (Play_LiveUseHls) {
             Play_PlayHLSUrl(Play_playingUrl);
             Play_SetFullScreen(Play_isFullScreen);
             Play_offsettime = Play_oldcurrentTime;
@@ -1670,6 +1670,67 @@ function Play_onPlayer() {
     } else Play_loadChat();
 }
 
+function Play_AutoSelectPlayer(url) {
+    Play_StopAndClose();
+    Play_Playing = false;
+    if (Play_autoRequest) Play_autoRequest.abort();
+    Play_AutoSelecting = true;
+    Play_showBufferDialog();
+    Play_ShowBlackOverlay();
+    Play_UpdatePlayerLabel();
+    var request = new XMLHttpRequest(), session = Play_sessionId, attempt = Play_nativeAttempt, done = false;
+    Play_autoRequest = request;
+    Play_requests.push(request);
+    function select(useHls, errorCode) {
+        if (done) return;
+        done = true;
+        var index = Play_requests.indexOf(request);
+        if (index !== -1) Play_requests.splice(index, 1);
+        if (Play_autoRequest === request) Play_autoRequest = null;
+        if (session !== Play_sessionId || attempt !== Play_nativeAttempt || !Play_isOn ||
+            Play_PlayerMode !== Play_PLAYER_AUTO || url !== Play_playingUrl) return;
+        if (errorCode) PlaybackDiagnostics.error('Auto playlist', errorCode);
+        Play_AutoSelecting = false;
+        Play_LiveUseHls = useHls && Play_HlsSupported;
+        Play_UpdatePlayerLabel();
+        PlaybackDiagnostics('Auto selected: ' + (Play_LiveUseHls ? 'HLS' : 'Native'));
+        if (Play_LiveUseHls) {
+            Play_PlayHLSUrl(url);
+            Play_SetFullScreen(Play_isFullScreen);
+            Play_offsettime = Play_oldcurrentTime;
+        } else Play_PlayNativeLive(url);
+    }
+    request.onreadystatechange = function () {
+        if (request.readyState !== 4) return;
+        if (request.status !== 200) select(true, 'HTTP_' + Number(request.status));
+        else {
+            // Twitch fMP4 renditions contain an initialization map. Unknown playlists use HLS.
+            var playlist = request.responseText;
+            select(/#EXT-X-MAP\s*:/.test(playlist) || !/#EXTINF\s*:/.test(playlist));
+        }
+    };
+    request.onerror = function () { select(true, 'networkError'); };
+    request.ontimeout = function () { select(true, 'requestTimeout'); };
+    try {
+        request.open('GET', url, true);
+        request.timeout = 8000;
+        request.send();
+    } catch (e) { select(true, e.name || 'requestFailed'); }
+}
+
+function Play_NativeFailure() {
+    if (Play_PlayerMode === Play_PLAYER_AUTO && Play_HlsSupported) {
+        Play_UseHlsFallbackLive('native-failed');
+        return;
+    }
+    Play_StopAndClose();
+    Play_Playing = false;
+    Play_HideBufferDialog();
+    Play_EndSet(1);
+    Play_PlayEndStart(1);
+    Play_showWarningDialog(Play_HlsSupported ? STR_NATIVE_FAILED : STR_FORMAT_NOT_SUPPORTED);
+}
+
 // Plays a live stream variant playlist (m3u8) through the native Tizen avplay.
 // Used when hls.js/MSE is unavailable or the user forced the native player.
 function Play_PlayNativeLive(url) {
@@ -1690,12 +1751,23 @@ function Play_PlayNativeLive(url) {
 
         Play_SetFullScreen(Play_isFullScreen);
         Play_avplay.setListener(Play_listener);
-
+        var pending = true;
+        Play_RetryLater(function () {
+            if (!pending || attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
+            pending = false;
+            PlaybackDiagnostics.error('Native prepare', 'prepareTimeout');
+            Play_NativeFailure();
+        }, Play_NativePrepareTimeout * 1000);
         Play_avplay.prepareAsync(
             function () {
-                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
+                if (!pending || attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
+                pending = false;
                 console.log('Play_avplay.prepareAsync Live OK:', 'date: ' + new Date());
-                Play_avplay.play();
+                try { Play_avplay.play(); } catch (error) {
+                    PlaybackDiagnostics.error('Native playback', error.name || 'playFailed');
+                    Play_NativeFailure();
+                    return;
+                }
                 Play_HideBufferDialog();
                 Play_HideBlackOverlay();
 
@@ -1706,30 +1778,28 @@ function Play_PlayNativeLive(url) {
                 Play_streamCheckId = window.setInterval(Play_PlayerCheck, Play_PlayerCheckInterval);
             },
             function () {
-                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
+                if (!pending || attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
+                pending = false;
+                PlaybackDiagnostics.error('Native prepare', 'prepareFailed');
                 console.log('Play_avplay.prepareAsync Live NOK:', 'date: ' + new Date());
-                Play_onPlayerCounter++;
-                if (Play_onPlayerCounter < 2) Play_RetryLater(function () {
-                    if (attempt === Play_nativeAttempt && Play_isOn && !Play_LiveUseHls) Play_PlayNativeLive(url);
-                }, 750);
-                else if (Play_qualityIndex < Play_getQualitiesCount() - 1) Play_DropOneQuality();
-                else if (Play_HlsSupported) Play_UseHlsFallbackLive('prepare-failed');
-                else Play_CheckEndStart();
+                Play_NativeFailure();
             }
         );
     } catch (e) {
+        PlaybackDiagnostics.error('Native start', e.name || 'Error');
         PlaybackDiagnostics('Playback operation failed');
-        Play_CheckEndStart();
+        Play_NativeFailure();
     }
 }
 
 // Switch the current live stream from the native player to HLS at runtime.
-// Triggered when native avplay can't decode the stream (fMP4/2K) on an
-// MSE-capable device, so "Native" mode stays a safe low-latency choice.
+// Auto alone may fall back to HLS; Native remains a forced backend.
 function Play_UseHlsFallbackLive(reason) {
-    if (Play_LiveUseHls || !Play_HlsSupported || !Play_isOn) return;
+    if (Play_PlayerMode !== Play_PLAYER_AUTO || Play_LiveUseHls || !Play_HlsSupported || !Play_isOn) return;
     console.log('Play live fallback to HLS:', reason);
     Play_LiveUseHls = true; // from now on the live path treats this stream as HLS
+    Play_AutoSelecting = false;
+    Play_UpdatePlayerLabel();
 
     try {
         Play_StopAndClose();
@@ -2011,6 +2081,13 @@ function Play_GetLiveDelay() {
     return typeof delay === 'number' && isFinite(delay) && delay >= 0 ? delay : null;
 }
 
+function Play_UpdatePlayerLabel() {
+    var live = Play_isOn && !PlayVod_isOn && !PlayClip_isOn;
+    var player = Play_UsesVideo() ? (PlayClip_isOn ? 'Video' : 'HLS') : 'Native';
+    if (live && Play_PlayerMode === Play_PLAYER_AUTO) player = 'Auto \u00b7 ' + (Play_AutoSelecting ? 'checking' : player);
+    Main_textContent('stream_player_mode', player);
+}
+
 function Play_UpdateLiveDelay() {
     var delay = Play_GetLiveDelay();
     Main_textContent('stream_live_delay', delay === null ? '' : 'LIVE \u00b7 ~' + Math.round(delay) + ' s');
@@ -2020,6 +2097,7 @@ function Play_GetDiagnosticStatus() {
     var live = Play_isOn && !PlayVod_isOn && !PlayClip_isOn;
     var quality = PlayVod_isOn ? PlayVod_qualityPlaying : (PlayClip_isOn ? PlayClip_qualityPlaying : Play_qualityPlaying);
     var status = (live ? 'Live' : (PlayVod_isOn ? 'VOD' : 'Clip')) + ' | ' + (Play_UsesVideo() ? 'HLS/Video' : 'Native') + ' | ' + quality;
+    if (live && Play_PlayerMode === Play_PLAYER_AUTO) status += ' | Auto' + (Play_AutoSelecting ? ' checking' : '');
     if (Play_UsesVideo()) {
         var video = Play_avplay_hls_player;
         if (video && !video.playbackDisposed) {
@@ -2180,6 +2258,7 @@ function Play_showPanel() {
 }
 
 function Play_UpdateVideoStatus() {
+    Play_UpdatePlayerLabel();
     Main_innerHTML('stream_status', Play_UpdateVideoStatusGetProxy());
 }
 

@@ -204,10 +204,14 @@ var Settings_value = {
         values: ['no', 'yes'],
         defaultValue: 1
     },
+    native_prepare_timeout: {
+        values: [10, 15, 20, 30],
+        defaultValue: 2
+    },
     player_mode: {
-        //hls / native
-        values: ['hls', 'native'],
-        defaultValue: 1
+        // Keep the old Native-with-fallback preference as Auto.
+        values: ['hls', 'auto', 'native'],
+        defaultValue: 2
     }
 };
 
@@ -388,9 +392,13 @@ function Settings_SetSettings() {
 
     key = 'player_mode';
     Settings_value_keys.push(key);
-    Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_NATIVE];
+    Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_AUTO, STR_PLAYER_MODE_NATIVE];
 
     div += Settings_DivOptionWithSummary(key, STR_PLAYER_MODE, STR_PLAYER_MODE_SUMMARY);
+
+    key = 'native_prepare_timeout';
+    Settings_value_keys.push(key);
+    div += Settings_DivOptionWithSummary(key, STR_NATIVE_PREPARE_TIMEOUT, STR_NATIVE_PREPARE_TIMEOUT_SUMMARY);
 
     key = 'playback_debug';
     Settings_value_keys.push(key);
@@ -595,7 +603,10 @@ function Settings_SetStrings() {
 
     key = 'player_mode';
     Settings_DivOptionChangeLang(key, STR_PLAYER_MODE, STR_PLAYER_MODE_SUMMARY);
-    Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_NATIVE];
+    Settings_value[key].values = [STR_PLAYER_MODE_HLS, STR_PLAYER_MODE_AUTO, STR_PLAYER_MODE_NATIVE];
+
+    key = 'native_prepare_timeout';
+    Settings_DivOptionChangeLang(key, STR_NATIVE_PREPARE_TIMEOUT, STR_NATIVE_PREPARE_TIMEOUT_SUMMARY);
 
     key = 'playback_debug';
     Settings_DivOptionChangeLang(key, STR_PLAYBACK_DEBUG, STR_PLAYBACK_DEBUG_SUMMARY);
@@ -630,6 +641,7 @@ function Settings_SetDefautls() {
     UserLiveFeed_NotifyTimeout = Settings_Obj_values('live_notification_time') * 1000;
     Play_SingleClickExit = Settings_Obj_default('single_click_exit');
     Play_PlayerMode = Settings_Obj_default('player_mode');
+    Play_NativePrepareTimeout = Settings_Obj_values('native_prepare_timeout');
     PlaybackDiagnostics.setEnabled(Settings_Obj_default('playback_debug'));
     Play_EndSettingsCounter = Settings_Obj_default('end_dialog_counter');
     Settings_ShowCounter(Settings_Obj_default('show_screen_counter'));
@@ -722,6 +734,8 @@ function Settings_SetDefault(position) {
         Play_PlayerMode = Settings_Obj_default('player_mode');
     } else if (position === 'playback_debug') {
         PlaybackDiagnostics.setEnabled(Settings_Obj_default('playback_debug'));
+    } else if (position === 'native_prepare_timeout') {
+        Play_NativePrepareTimeout = Settings_Obj_values('native_prepare_timeout');
     } else if (position === 'clock_offset') {
         Settings_SetClock();
         Main_updateclock();
