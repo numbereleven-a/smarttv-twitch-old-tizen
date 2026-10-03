@@ -59,6 +59,7 @@ var PlayVod_hlsSeekApplied = false;
 
 function PlayVod_Start() {
     document.getElementById('reload_button').style.display = 'none';
+    document.getElementById('to_live_button').style.display = 'none';
     Main_textContent('stream_live_delay', '');
     Play_InvalidateSession();
     Play_showBufferDialog();
@@ -957,6 +958,7 @@ function PlayVod_IconsBottonResetFocus() {
     PlayVod_PanelY = 1;
     PlayClip_EnterPos = 0;
     Play_ReloadFocused = false;
+    Play_ToLiveFocused = false;
     PlayVod_IconsBottonFocus();
 }
 
@@ -967,6 +969,7 @@ function PlayVod_IconsBottonFocus() {
     }
     Main_RemoveClass('pause_button', 'progress_bar_div_focus');
     Main_RemoveClass('reload_button', 'progress_bar_div_focus');
+    Main_RemoveClass('to_live_button', 'progress_bar_div_focus');
     Main_RemoveClass('next_button', 'progress_bar_div_focus');
     Main_RemoveClass('back_button', 'progress_bar_div_focus');
     Main_RemoveClass('progress_bar_div', 'progress_bar_div_focus');
@@ -981,7 +984,9 @@ function PlayVod_IconsBottonFocus() {
         }
     } else if (PlayVod_PanelY === 1) {
         //pause/next/back buttons
-        if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn && Play_ReloadFocused) {
+        if (Play_CanGoLive() && Play_ToLiveFocused) {
+            Main_AddClass('to_live_button', 'progress_bar_div_focus');
+        } else if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn && Play_ReloadFocused) {
             Main_AddClass('reload_button', 'progress_bar_div_focus');
         } else if (!PlayClip_EnterPos) {
             //pause

@@ -178,6 +178,14 @@ function en_USLang() {
     STR_VIDEO = ' Video';
     STR_REPLAY = 'Replay';
     STR_RELOAD = 'Reload';
+    STR_TO_LIVE = 'To live';
+    STR_LOADING_STREAM = 'Loading stream';
+    STR_CHECKING_FORMAT = 'Checking stream format';
+    STR_STARTING_NATIVE = 'Starting Native';
+    STR_SWITCHING_HLS = 'Switching to HLS';
+    STR_BUFFERING = 'Buffering';
+    STR_STARTUP_RETRY = 'Retrying stream (1/1)';
+    STR_RETURNING_LIVE = 'Returning to live';
     STR_PLAYBACK_DEBUG = 'Playback debug log';
     STR_PLAYBACK_DEBUG_SUMMARY = 'Show player state, buffers and the last five errors with time and exception text. History lasts until the app closes. The overlay is disabled by default.';
     STR_NATIVE_PREPARE_TIMEOUT = 'Native start timeout (seconds)';

@@ -53,6 +53,7 @@ function env() {
     loadSource(url) { this.url=url; }
     destroy() { stats.destroy++; }
     stopLoad() { stats.stopLoad++; }
+    startLoad(position) { this.startPosition=position; }
     recoverMediaError() { stats.recover++; }
   }
   FakeHls.Events=realHls.Events;
@@ -135,6 +136,7 @@ check('Control: LF AVC master is parsed and filtered to FHD',()=>{
 });
 check('R1: native prepare failures must stop retrying or fall back',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=false;
+  c.Play_StartupRetryUsed=true;
   c.Play_DropOneQuality=()=>stats.drop++;c.Play_UseHlsFallbackLive=()=>stats.fallback++;
   c.Play_PlayNativeLive('https://example.invalid/live.m3u8');
   for(let i=0;i<4&&stats.pendingPrepare.length;i++) {
@@ -218,6 +220,7 @@ check('Control: fMP4 parser rejects a truncated box',()=>{
 });
 check('Fatal manifest failure must enter terminal UI without an unusable restart',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+  c.Play_StartupRetryUsed=true;
   c.hls.trigger(c.Hls.Events.ERROR,{fatal:true,type:c.Hls.ErrorTypes.NETWORK_ERROR,details:'manifestLoadError'});
   assert.equal(c.hls,null);assert.ok(stats.warning>0 && stats.terminal>0);
 });
@@ -232,6 +235,7 @@ check('VOD replay consumes the replay flag and later quality changes preserve po
 });
 check('Media recovery is bounded and stopped controllers cannot affect playback',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+  c.Play_HasStarted=true;
   const old=c.hls;
   for(let i=0;i<3;i++)old.trigger(c.Hls.Events.ERROR,{fatal:true,type:c.Hls.ErrorTypes.MEDIA_ERROR});
   assert.equal(stats.recover,2);assert.equal(c.hls,null);assert.ok(stats.terminal>0);
@@ -264,7 +268,8 @@ check('Reload gets a fresh token for the same channel and retains the playing qu
     'UserLiveFeed_SetFeedPicText','ChatLive_Clear','Play_updateStreamInfoStart','Play_updateStreamInfo',
     'PlayClip_UpdateGameInfo','Play_IconsResetFocus','PlayClip_HideShowNext','Main_handleKeyUp'])c[name]=()=>{};
   c.IMG_404_LOGO_TEMP='';c.PlayClip_qualities=[];
-  c.Play_ReloadLive();
+  c.Play_StartupRetryUsed=true;c.Play_ReloadLive(true);
+  assert.equal(c.Play_StartupRetryUsed,true);
   assert.ok(oldRequest.aborted);assert.equal(stats.destroy,1);assert.ok(oldVideo.playbackDisposed);
   assert.equal(c.Main_values.Play_selectedChannel,'channel_a');assert.equal(c.Main_values.Play_selectedChannel_id,'123');
   assert.equal(c.Play_quality,'1080p60');assert.equal(c.Play_qualityPlaying,'1080p60');
@@ -279,6 +284,7 @@ check('Reload gets a fresh token for the same channel and retains the playing qu
   c.Play_PlayHLSUrl('https://example.invalid/fresh.m3u8');
   assert.notEqual(c.hls,oldPlayer);assert.equal(c.hls.url,'https://example.invalid/fresh.m3u8');
   c.Play_Playing=true;oldVideo.dispatch('pause');assert.equal(c.Play_Playing,true);
+  c.Play_ReloadLive();assert.equal(c.Play_StartupRetryUsed,false);
 });
 check('Live controls focus Reload with Right and activate it with OK; Left returns to Play',()=>{
   const {c}=env();c.Play_isOn=true;c.PlayVod_PanelY=1;c.PlayClip_EnterPos=0;
@@ -349,6 +355,7 @@ check('Auto recovers from an IDLE Native prepare timeout and ignores a late succ
 });
 check('Forced Native reports unsupported format without silently changing backend',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Play_PlayerMode=c.Play_PLAYER_NATIVE;c.Play_LiveUseHls=false;
+  c.Play_StartupRetryUsed=true;
   c.Play_playingUrl='https://example.invalid/live.m3u8';
   c.Play_PlayNativeLive(c.Play_playingUrl);
   c.Play_listener.onerror('PLAYER_ERROR_NOT_SUPPORTED_FORMAT');
@@ -424,6 +431,61 @@ check('HLS internal exceptions pass their message to the diagnostic history',()=
   const error=new Error('Failed to parse fragment');
   c.hls.trigger(realHls.Events.ERROR,{type:realHls.ErrorTypes.OTHER_ERROR,details:'internalException',fatal:false,error});
   assert.equal(errors[0][0],'HLS');assert.equal(errors[0][1],'internalException');assert.equal(errors[0][2],error);
+});
+check('A fatal startup error reloads once, retains diagnostics and ignores obsolete callbacks',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/general/PlaybackDiagnostics.js'),c);
+  c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();const old=c.hls;
+  let reload=0;c.Play_ReloadLive=automatic=>{assert.equal(automatic,true);reload++;};
+  const error={fatal:true,type:c.Hls.ErrorTypes.OTHER_ERROR,details:'internalException',error:new Error('Startup fixture exception')};
+  old.trigger(c.Hls.Events.ERROR,error);
+  assert.equal(c.Play_StartupRetryUsed,true);assert.equal(stats.warning,0);assert.equal(stats.terminal,0);
+  const retry=stats.timers.at(-1);old.trigger(c.Hls.Events.ERROR,error);retry();assert.equal(reload,1);
+  c.initHLSPlayer();c.hls.trigger(c.Hls.Events.ERROR,error);
+  assert.equal(stats.terminal,1);assert.equal(stats.warning,1);
+  c.PlaybackDiagnostics.setEnabled(true);
+  assert.ok(c.document.getElementById('playback_debug').textContent.includes('Startup fixture exception'));
+  const stopped=env();stopped.c.Play_isOn=true;stopped.c.Play_LiveUseHls=true;stopped.c.initHLSPlayer();
+  stopped.c.hls.trigger(stopped.c.Hls.Events.ERROR,error);const late=stopped.stats.timers.at(-1);
+  stopped.c.Play_InvalidateSession();stopped.c.Play_ReloadLive=()=>{throw new Error('Restarted a closed channel');};late();
+});
+check('Successful playback prevents automatic Reload on a later fatal error',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+  c.Play_avplay_hls_player.dispatch('playing');
+  c.hls.trigger(c.Hls.Events.ERROR,{fatal:true,type:c.Hls.ErrorTypes.OTHER_ERROR,details:'internalException'});
+  assert.equal(c.Play_HasStarted,true);assert.equal(c.Play_StartupRetryUsed,false);assert.equal(stats.terminal,1);
+});
+check('HLS live pause stops loading and Play resumes from the same buffered position',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+  const video=c.Play_avplay_hls_player;video.currentTime=25;video.paused=false;
+  c.Play_KeyPause(1);assert.equal(video.paused,true);assert.equal(stats.stopLoad,1);assert.equal(video.currentTime,25);
+  c.Play_KeyPause(1);assert.equal(video.paused,false);assert.equal(c.hls.startPosition,25);
+  c.PlayVod_isOn=true;c.PlayVod_useHls=true;const stops=stats.stopLoad;c.Play_KeyPause(2);assert.equal(stats.stopLoad,stops);
+});
+check('To live seeks after a fresh playlist update and is unavailable for Native or VOD',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+  const player=c.hls,video=c.Play_avplay_hls_player;player.latestLevelDetails={live:true};player.liveSyncPosition=90;
+  video.currentTime=25;video.paused=true;c.Play_UpdateGoLiveButton();
+  assert.equal(c.document.getElementById('to_live_button').style.display,'inline-block');
+  c.Play_GoLive();assert.equal(c.Play_GoLivePending,true);assert.equal(video.currentTime,25);
+  player.liveSyncPosition=110;player.trigger(c.Hls.Events.LEVEL_UPDATED,{});
+  assert.equal(video.currentTime,110);assert.equal(video.paused,false);assert.equal(c.Play_GoLivePending,false);assert.equal(stats.destroy,0);
+  c.Play_LiveUseHls=false;c.Play_UpdateGoLiveButton();assert.equal(c.document.getElementById('to_live_button').style.display,'none');
+  c.Play_GoLive();assert.equal(c.Play_GoLivePending,false);
+  c.Play_LiveUseHls=true;c.PlayVod_isOn=true;c.Play_UpdateGoLiveButton();assert.equal(c.Play_CanGoLive(),false);
+  c.PlayVod_isOn=false;c.Play_GoLive();c.Play_InvalidateSession();player.liveSyncPosition=150;
+  player.trigger(c.Hls.Events.LEVEL_UPDATED,{});assert.equal(video.currentTime,110);
+});
+check('Live controls navigate Play, Reload and To live while Native skips To live',()=>{
+  const {c}=env();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();c.hls.latestLevelDetails={live:true};
+  c.PlayVod_PanelY=1;c.PlayClip_EnterPos=0;c.KEY_LEFT=37;c.KEY_RIGHT=39;c.KEY_ENTER=13;
+  c.UserLiveFeed_isFeedShow=()=>false;c.Play_isPanelShown=()=>true;let seek=0;c.Play_GoLive=()=>seek++;
+  c.Play_handleKeyDown({keyCode:39});assert.equal(c.Play_ReloadFocused,true);
+  c.Play_handleKeyDown({keyCode:39});assert.equal(c.Play_ToLiveFocused,true);
+  assert.ok(c.document.getElementById('to_live_button').classList.contains('progress_bar_div_focus'));
+  c.Play_handleKeyDown({keyCode:13});assert.equal(seek,1);
+  c.Play_handleKeyDown({keyCode:37});assert.equal(c.Play_ToLiveFocused,false);assert.equal(c.Play_ReloadFocused,true);
+  c.Play_handleKeyDown({keyCode:37});assert.equal(c.Play_ReloadFocused,false);
+  c.Play_LiveUseHls=false;c.Play_handleKeyDown({keyCode:39});c.Play_handleKeyDown({keyCode:39});assert.equal(c.Play_ToLiveFocused,false);
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

@@ -1371,6 +1371,26 @@
                 height: auto;
             }
 
+            .live_action_button {
+                display: none;
+                position: absolute;
+                top: 0;
+                width: 4.5%;
+                padding-top: 0.375em;
+                padding-bottom: 0.375em;
+            }
+
+            .live_action_label {
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                font-size: 0.7em;
+                white-space: nowrap;
+                color: #ffffff;
+                text-shadow: 0 1px 3px black;
+            }
+
             .controls_button_holder {
                 display: inline-block;
                 width: 5.75%;
@@ -2409,9 +2429,13 @@
                                     </div>
                                 </div>
                             </div>
-                            <div id="reload_button" class="pause_button" style="display: none; position: absolute; left: 54%; top: 0; width: 5%; padding-top: 0.375em; padding-bottom: 0.375em">
+                            <div id="reload_button" class="pause_button live_action_button" style="left: 54%">
                                 <div><i class="pause_button3d icon-refresh"></i></div>
-                                <div id="reload_button_text" style="font-size: 0.7em"></div>
+                                <div id="reload_button_text" class="live_action_label"></div>
+                            </div>
+                            <div id="to_live_button" class="pause_button live_action_button" style="left: 60%">
+                                <div><i class="pause_button3d icon-next"></i></div>
+                                <div id="to_live_button_text" class="live_action_label"></div>
                             </div>
                         </div>
                     </div>
@@ -2546,6 +2570,7 @@
                         </div>
                     </div>
                     <div id="dialog_loading_play" class="screen_size dialogs hide" style="z-index: 98; margin-top: 50vh; overflow: visible">
+                        <div id="play_loading_status" style="position: absolute; width: 100%; top: 4em; text-align: center; font-size: 1.3em; color: white; text-shadow: 0 1px 3px black"></div>
                         <div class="loading">
                             <div></div>
                             <div></div>

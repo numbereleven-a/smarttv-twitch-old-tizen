@@ -216,6 +216,9 @@ var Play_retryTimers = [];
 var Play_nativeAttempt = 0;
 var Play_autoRequest = null;
 var Play_AutoSelecting = false;
+var Play_StartupRetryUsed = false;
+var Play_HasStarted = false;
+var Play_GoLivePending = false;
 
 function Play_InvalidateSession() {
     Play_sessionId++;
@@ -224,6 +227,7 @@ function Play_InvalidateSession() {
     Play_requests = [];
     Play_autoRequest = null;
     Play_AutoSelecting = false;
+    Play_GoLivePending = false;
     for (var i = 0; i < requests.length; i++) {
         try { requests[i].abort(); } catch (ignore) {}
     }
@@ -261,12 +265,25 @@ function Play_DestroyHls() {
 function Play_MediaFailure(video) {
     if (video !== Play_avplay_hls_player || video.playbackDisposed || video.playbackFailed) return;
     video.playbackFailed = true;
+    if (Play_RetryStartup()) return;
     Play_DestroyHls();
     video.pause();
     Play_Playing = false;
     Play_HideBufferDialog();
     Play_PannelEndStart(PlayVod_isOn ? 2 : (PlayClip_isOn ? 3 : 1));
     Play_showWarningDialog('Playback failed. Select ' + (PlayVod_isOn || PlayClip_isOn ? STR_REPLAY : STR_RELOAD) + ' to try again.');
+}
+
+function Play_RetryStartup() {
+    if (!Play_isOn || PlayVod_isOn || PlayClip_isOn || Play_HasStarted || Play_StartupRetryUsed) return false;
+    Play_StartupRetryUsed = true;
+    PlaybackDiagnostics('Automatic startup Reload 1/1');
+    Play_InvalidateSession();
+    Play_StopAndClose();
+    Play_Playing = false;
+    Play_showBufferDialog(STR_STARTUP_RETRY);
+    Play_RetryLater(function () { if (Play_isOn) Play_ReloadLive(true); }, 500);
+    return true;
 }
 
 // Whether hls.js + MSE are usable on this device. Computed once, safely.
@@ -336,6 +353,7 @@ function initHLSPlayer() {
     };
     video.onplaying = function () {
         if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
+        if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn) Play_HasStarted = true;
         PlaybackDiagnostics('VIDEO playing: ' + video.videoWidth + 'x' + video.videoHeight);
         video.style.visibility = 'visible';
         Play_HideBufferDialog();
@@ -419,6 +437,26 @@ function initHLSPlayer() {
             PlaybackDiagnostics('HLS manifest parsed: ' + data.levels.length + ' levels');
             console.log('manifest loaded, found ' + data.levels.length + ' quality level');
         });
+        hls.on(Hls.Events.LEVEL_UPDATED, function () {
+            if (hls !== controller || Play_avplay_hls_player !== video || video.playbackDisposed) return;
+            Play_UpdateGoLiveButton();
+            if (!Play_GoLivePending) return;
+            var position = controller.liveSyncPosition;
+            if (typeof position !== 'number' || !isFinite(position)) return;
+            Play_GoLivePending = false;
+            try {
+                video.currentTime = position;
+                webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
+                video.play();
+                Main_innerHTML('pause_button', '<div><i class="pause_button3d icon-pause"></i></div>');
+                Play_clearPause();
+                ChatLive_MessagesRunAfterPause();
+                Play_UpdateLiveDelay();
+            } catch (error) {
+                PlaybackDiagnostics.error('Go live', error.name || 'Error', error);
+                Play_MediaFailure(video);
+            }
+        });
         hls.on(Hls.Events.ERROR, function (event, data) {
             if (hls !== controller || Play_avplay_hls_player !== video) return;
             var errorType = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'mediaError' : data.type === Hls.ErrorTypes.NETWORK_ERROR ? 'networkError' : 'otherError';
@@ -427,6 +465,10 @@ function initHLSPlayer() {
             PlaybackDiagnostics('HLS: ' + errorType + '/' + details + ' fatal=' + !!data.fatal +
                 (data.response && typeof data.response.code === 'number' ? ' HTTP=' + data.response.code : ''));
             if (!data.fatal) return;
+            if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn && !Play_HasStarted) {
+                Play_MediaFailure(video);
+                return;
+            }
             if (recoveries++ < 2 && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                 try {
                     var recoveryTime = video.currentTime;
@@ -579,6 +621,7 @@ function Play_StopAndCloseAndPlay(url) {
 
 function Play_StopAndClose() {
     Play_nativeAttempt++;
+    Play_GoLivePending = false;
     Play_DestroyHls();
     try {
         if (Main_IsNotBrowser && Play_avplay) Play_avplay.stop();
@@ -741,8 +784,9 @@ function Play_SetChatFont() {
 }
 
 var Play_ReloadFocused = false;
+var Play_ToLiveFocused = false;
 
-function Play_ReloadLive() {
+function Play_ReloadLive(automaticRetry) {
     if (!Play_isOn || PlayVod_isOn || PlayClip_isOn) return;
     var quality = Play_qualityPlaying || Play_quality;
     PlaybackDiagnostics('Reload live channel');
@@ -757,19 +801,23 @@ function Play_ReloadLive() {
     Play_qualities = [];
     Play_playingUrl = '';
     document.body.addEventListener('keydown', Play_handleKeyDown, false);
-    Play_Start(quality);
+    Play_Start(quality, automaticRetry === true);
 }
 
-function Play_Start(reloadQuality) {
+function Play_Start(reloadQuality, automaticRetry) {
     Play_InvalidateSession();
+    if (!automaticRetry) Play_StartupRetryUsed = false;
+    Play_HasStarted = false;
     Play_quality = reloadQuality || localStorage.getItem('Play_quality') || '720p';
     Play_qualityPlaying = Play_quality;
     Play_ReloadFocused = false;
+    Play_ToLiveFocused = false;
+    document.getElementById('to_live_button').style.display = 'none';
     document.getElementById('reload_button').style.display = 'inline-block';
     Main_textContent('reload_button_text', STR_RELOAD);
     Main_textContent('stream_live_delay', '');
     Main_innerHTML('pause_button', '<div><i class="pause_button3d icon-pause"></i></div>');
-    // Play_showBufferDialog();
+    Play_showBufferDialog(STR_LOADING_STREAM);
     Play_ResetProxy();
     Play_ShowBlackOverlay();
     if (Play_avplay_hls_player) Play_avplay_hls_player.style.visibility = 'hidden';
@@ -1303,6 +1351,7 @@ function Play_loadDataRequest(skipProxy) {
 
         xmlHttp.send(Play_state === Play_STATE_LOADING_TOKEN ? Play_live_token.replace('%x', Main_values.Play_selectedChannel) : null);
     } catch (e) {
+        PlaybackDiagnostics.error('Live request', e.name || 'Error', e);
         PlaybackDiagnostics('Playback operation failed');
         Play_loadDataError();
     }
@@ -1329,6 +1378,7 @@ function Play_loadDataError() {
             Play_loadingDataTimeout += 250;
             Play_RetryLater(Play_loadDataRequest, 500);
         } else {
+            if (Play_RetryStartup()) return;
             if (Main_IsNotBrowser) Play_loadDataErrorFinish();
             else Play_loadDataSuccessFake();
         }
@@ -1599,6 +1649,8 @@ var Play_listener = {
         Play_RestoreFromResume = false;
     },
     oncurrentplaytime: function (currentTime) {
+        if (!Play_isOn || Play_LiveUseHls || Play_AutoSelecting) return;
+        if (currentTime > 0) Play_HasStarted = true;
         if (Play_currentTime !== currentTime) Play_updateCurrentTime(currentTime);
     },
     onstreamcompleted: function () {
@@ -1675,7 +1727,7 @@ function Play_AutoSelectPlayer(url) {
     Play_Playing = false;
     if (Play_autoRequest) Play_autoRequest.abort();
     Play_AutoSelecting = true;
-    Play_showBufferDialog();
+    Play_showBufferDialog(STR_CHECKING_FORMAT);
     Play_ShowBlackOverlay();
     Play_UpdatePlayerLabel();
     var request = new XMLHttpRequest(), session = Play_sessionId, attempt = Play_nativeAttempt, done = false;
@@ -1723,6 +1775,7 @@ function Play_NativeFailure() {
         Play_UseHlsFallbackLive('native-failed');
         return;
     }
+    if (Play_RetryStartup()) return;
     Play_StopAndClose();
     Play_Playing = false;
     Play_HideBufferDialog();
@@ -1751,6 +1804,7 @@ function Play_PlayNativeLive(url) {
 
         Play_SetFullScreen(Play_isFullScreen);
         Play_avplay.setListener(Play_listener);
+        Play_showBufferDialog(STR_STARTING_NATIVE);
         var pending = true;
         Play_RetryLater(function () {
             if (!pending || attempt !== Play_nativeAttempt || session !== Play_sessionId || !Play_isOn || Play_LiveUseHls) return;
@@ -1809,6 +1863,7 @@ function Play_UseHlsFallbackLive(reason) {
 
     Play_onPlayerCounter = 0;
     Play_PlayHLSUrl(Play_playingUrl);
+    Play_showBufferDialog(STR_SWITCHING_HLS);
     Play_SetFullScreen(Play_isFullScreen);
     Play_offsettime = Play_oldcurrentTime;
     if (Play_ChatEnable && !Play_isChatShown()) Play_showChat();
@@ -2086,6 +2141,33 @@ function Play_UpdatePlayerLabel() {
     var player = Play_UsesVideo() ? (PlayClip_isOn ? 'Video' : 'HLS') : 'Native';
     if (live && Play_PlayerMode === Play_PLAYER_AUTO) player = 'Auto \u00b7 ' + (Play_AutoSelecting ? 'checking' : player);
     Main_textContent('stream_player_mode', player);
+    Play_UpdateGoLiveButton();
+}
+
+function Play_CanGoLive() {
+    return !!(Play_isOn && !PlayVod_isOn && !PlayClip_isOn && Play_LiveUseHls && hls &&
+        hls.latestLevelDetails && hls.latestLevelDetails.live && Play_avplay_hls_player &&
+        !Play_avplay_hls_player.playbackDisposed);
+}
+
+function Play_UpdateGoLiveButton() {
+    document.getElementById('to_live_button').style.display = Play_CanGoLive() ? 'inline-block' : 'none';
+    Main_textContent('to_live_button_text', STR_TO_LIVE);
+    if (!Play_CanGoLive()) Play_ToLiveFocused = false;
+}
+
+function Play_GoLive() {
+    if (!Play_CanGoLive()) return;
+    PlaybackDiagnostics('Returning to live edge');
+    Play_GoLivePending = true;
+    Play_showBufferDialog(STR_RETURNING_LIVE);
+    // Refresh the playlist before seeking, including after a long pause.
+    try { hls.startLoad(Play_avplay_hls_player.currentTime); }
+    catch (error) {
+        Play_GoLivePending = false;
+        PlaybackDiagnostics.error('Go live', error.name || 'Error', error);
+        Play_MediaFailure(Play_avplay_hls_player);
+    }
 }
 
 function Play_UpdateLiveDelay() {
@@ -2173,12 +2255,14 @@ function Play_hideFollow() {
     AddCode_IsFollowing = false;
 }
 
-function Play_showBufferDialog() {
+function Play_showBufferDialog(text) {
+    Main_textContent('play_loading_status', text || STR_BUFFERING);
     Main_ShowElement('dialog_loading_play');
 }
 
 function Play_HideBufferDialog() {
     Main_HideElement('dialog_loading_play');
+    Main_textContent('play_loading_status', '');
 }
 
 function Play_BufferDialogVisible() {
@@ -2385,6 +2469,7 @@ function Play_KeyPause(PlayVodClip) {
         if (Main_IsNotBrowser) {
             try {
                 webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
+                if (PlayVodClip === 1 && Play_LiveUseHls && hls) hls.startLoad(Play_avplay_hls_player.currentTime);
                 Play_ActivePlayer().play();
             } catch (e) {
                 PlaybackDiagnostics('Playback operation failed');
@@ -2413,6 +2498,10 @@ function Play_KeyPause(PlayVodClip) {
             try {
                 webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON);
                 Play_ActivePlayer().pause();
+                if (PlayVodClip === 1 && Play_LiveUseHls && hls) {
+                    Play_GoLivePending = false;
+                    hls.stopLoad();
+                }
             } catch (e) {
                 PlaybackDiagnostics('Playback operation failed');
                 return;
@@ -3001,7 +3090,11 @@ function Play_PlayHLSUrl(url) {
         Play_SetHlsVisible(true);
         Play_avplay_hls_player.play();
     } catch (e) {
+        PlaybackDiagnostics.error('HLS start', e.name || 'Error', e);
         PlaybackDiagnostics('Playback operation failed');
+        if (Play_isOn && !PlayVod_isOn && !PlayClip_isOn) {
+            if (!Play_RetryStartup()) Play_MediaFailure(Play_avplay_hls_player);
+        }
     }
 }
 
@@ -3143,7 +3236,10 @@ function Play_handleKeyDown(e) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 2) Play_BottomLeftRigt(1, -1);
                     else if (PlayVod_PanelY === 1) {
-                        Play_ReloadFocused = false;
+                        if (Play_ToLiveFocused) {
+                            Play_ToLiveFocused = false;
+                            Play_ReloadFocused = true;
+                        } else Play_ReloadFocused = false;
                         PlayVod_IconsBottonFocus();
                     }
                     Play_setHidePanel();
@@ -3169,7 +3265,10 @@ function Play_handleKeyDown(e) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 2) Play_BottomLeftRigt(1, 1);
                     else if (PlayVod_PanelY === 1) {
-                        Play_ReloadFocused = true;
+                        if (Play_ReloadFocused && Play_CanGoLive()) {
+                            Play_ReloadFocused = false;
+                            Play_ToLiveFocused = true;
+                        } else if (!Play_ToLiveFocused) Play_ReloadFocused = true;
                         PlayVod_IconsBottonFocus();
                     }
                     Play_setHidePanel();
@@ -3234,7 +3333,8 @@ function Play_handleKeyDown(e) {
                 } else if (Play_isPanelShown()) {
                     Play_clearHidePanel();
                     if (PlayVod_PanelY === 1) {
-                        if (Play_ReloadFocused) Play_ReloadLive();
+                        if (Play_ToLiveFocused) Play_GoLive();
+                        else if (Play_ReloadFocused) Play_ReloadLive();
                         else Play_KeyPause(1);
                     } else Play_BottomOptionsPressed(1);
                     Play_setHidePanel();

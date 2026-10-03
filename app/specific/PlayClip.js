@@ -49,6 +49,7 @@ var PlayClip_ExtraClipInfo =
 
 function PlayClip_Start() {
     document.getElementById('reload_button').style.display = 'none';
+    document.getElementById('to_live_button').style.display = 'none';
     Main_textContent('stream_live_delay', '');
     Play_showBufferDialog();
     Play_HideEndDialog();
