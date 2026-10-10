@@ -1,5 +1,7 @@
 # SmartTV Twitch — Old Tizen
 
+[README на русском](README_RU.md)
+
 This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that enable 1440p may deliver even their 720p and 1080p variants as fragmented MP4 (fMP4), which the legacy native player on the tested TV could not play. The app uses hls.js and MediaSource, separates the H.264 video and AAC audio fragments on the TV, and feeds them to separate media buffers.
 
 **This enables up to 1080p on tested 1440p-enabled channels; it does not add 1440p playback.**
@@ -11,7 +13,6 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | App name | Twitch Old Tizen |
 | Package version | 4.0.9 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
-| Language | [Русская версия](README_RU.md) |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
 ## Install
