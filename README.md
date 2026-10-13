@@ -11,7 +11,7 @@ This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Package version | 4.0.9 |
+| Package version | 4.0.10 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
@@ -30,7 +30,7 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.0.9 keeps the application identifiers used by 4.0.5, 4.0.6, 4.0.7 and 4.0.8. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
+Version 4.0.10 keeps the application identifiers used by 4.0.5, 4.0.6, 4.0.7, 4.0.8 and 4.0.9. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 
@@ -50,7 +50,7 @@ The live stream player has three modes:
 - **Native start timeout (seconds):** choose 10, 15, 20 or 30 seconds in Player settings. The value applies to the next Native playback start; it does not change the LIVE delay.
 - **Native:** forces Samsung AVPlay. It does not silently switch to HLS. Unsupported streams show an error suggesting HLS or Auto.
 
-The previous Native-with-fallback preference becomes Auto on update. An existing HLS preference remains HLS. The owner confirmed Auto selected HLS and played a live stream on KU6000/Tizen 2.4.0 in version 4.0.7. The new startup retry, HLS pause and To live behavior in 4.0.9 have offline checks; verification on a physical TV is pending.
+The previous Native-with-fallback preference becomes Auto on update. An existing HLS preference remains HLS. The owner confirmed playback on KU6000/Tizen 2.4.0 in version 4.0.9. The fixes in 4.0.10 have offline checks; verification on a physical TV is pending.
 
 ## Requirements and compatibility
 

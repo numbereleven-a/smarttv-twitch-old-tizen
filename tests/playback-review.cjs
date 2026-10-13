@@ -377,19 +377,28 @@ check('Auto can use HLS when playlist detection fails; HLS mode does not need a 
   c.Play_PlayerMode=c.Play_PLAYER_HLS;c.Play_LiveUseHls=true;const requests=stats.requests.length;
   c.Play_onPlayer();assert.equal(stats.requests.length,requests);
 });
-check('The previous Native setting selects Auto and does not reset account storage',()=>{
-  const {c}=env();const stored=new Map([['player_mode','2'],['AddUser_UsernameArray','TEST_ACCOUNT_STATE']]);
-  c.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
-  vm.runInContext(read('app/specific/Settings.js'),c);
-  c.Main_getItemInt=(key,fallback)=>Number(c.localStorage.getItem(key)||fallback);
-  c.Settings_value.player_mode.defaultValue=c.Main_getItemInt('player_mode',c.Settings_value.player_mode.defaultValue)-1;
-  c.Settings_SetDefault('player_mode');assert.equal(c.Play_PlayerMode,c.Play_PLAYER_AUTO);
-  const fresh=env().c;vm.runInContext(read('app/specific/Settings.js'),fresh);
-  assert.equal(fresh.Settings_value.player_mode.defaultValue-1,fresh.Play_PLAYER_AUTO);
-  stored.set('player_mode','1');
-  c.Settings_value.player_mode.defaultValue=c.Main_getItemInt('player_mode',2)-1;
-  c.Settings_SetDefault('player_mode');assert.equal(c.Play_PlayerMode,c.Play_PLAYER_HLS);
-  assert.equal(stored.get('AddUser_UsernameArray'),'TEST_ACCOUNT_STATE');
+check('Player initialization keeps Auto on a clean install and preserves saved modes and accounts',()=>{
+  for(const [saved,expected] of [[null,1],['2',1],['1',0],['3',2]]) {
+    const {c}=env(),noop=()=>{};
+    const stored=new Map([['AddUser_UsernameArray','TEST_ACCOUNT_STATE']]);
+    if(saved!==null)stored.set('player_mode',saved);
+    c.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
+    vm.runInContext(read('app/specific/Settings.js'),c);
+    const main=read('app/specific/Main.js');
+    for(const name of ['Main_getItemInt','Main_getItemBool']) {
+      vm.runInContext(main.match(new RegExp('function '+name+'\\([^]*?\\n\\}'))[0],c);
+    }
+    for(const name of ['Settings_SetBuffers','Settings_SetClock','Main_SetThumb','Settings_SetAnimations',
+      'Settings_ShowCounter','Settings_proxy_set_start','Settings_set_http','Play_ChatSize','Play_ChatBackgroundChange','Play_SetChatFont'])c[name]=noop;
+    c.PlaybackDiagnostics.setEnabled=noop;c.Main_getElementById=id=>c.document.getElementById(id);
+    c.tizen={systeminfo:{getCapability:()=> '2.4.0'}};c.webapis.avplay=c.Play_avplay;c.webapis.preview={setPreviewData:noop};
+    c.IMG_404_LOGO='';c.AddCode_clientId='example-client';c.AddCode_client_backup='example-client';
+    c.Main_AcceptHeader='Accept';c.Main_TwitchV5Json='application/json';c.Main_Authorization='Authorization';
+    c.Settings_SetDefautls();c.Play_PreStart();
+    assert.equal(c.Play_PlayerMode,expected,'Player mode after full initialization, saved='+saved);
+    assert.equal(c.Settings_Obj_default('player_mode'),expected);
+    assert.equal(stored.get('AddUser_UsernameArray'),'TEST_ACCOUNT_STATE');
+  }
 });
 check('Five timestamped errors stay in memory, include sanitized exception text and reset after restart',()=>{
   const {c,stats}=env();const stored=new Map([['playback_error_history','OLD_HISTORY'],['account','TEST_ACCOUNT_STATE']]);
@@ -486,6 +495,25 @@ check('Live controls navigate Play, Reload and To live while Native skips To liv
   c.Play_handleKeyDown({keyCode:37});assert.equal(c.Play_ToLiveFocused,false);assert.equal(c.Play_ReloadFocused,true);
   c.Play_handleKeyDown({keyCode:37});assert.equal(c.Play_ReloadFocused,false);
   c.Play_LiveUseHls=false;c.Play_handleKeyDown({keyCode:39});c.Play_handleKeyDown({keyCode:39});assert.equal(c.Play_ToLiveFocused,false);
+});
+check('Clip playback reactivates error handling after a previous player was stopped',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);
+  c.Play_EndSet=()=>{};
+  c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();c.Play_offPlayer();
+  c.Play_isOn=false;c.PlayClip_isOn=true;c.PlayClip_playingUrl='https://example.invalid/clip.mp4';
+  const errors=[];c.PlaybackDiagnostics.error=(...args)=>errors.push(args);
+  c.PlayClip_onPlayer();const plays=stats.videoPlay,video=c.Play_avplay_hls_player;
+  video.error={code:2};video.onerror();
+  assert.equal(errors.length,1);assert.equal(c.Play_onPlayerCounter,1);assert.equal(stats.videoPlay,plays+1);
+  video.onerror();video.onerror();assert.equal(stats.terminal,1);
+});
+check('A failed logo request retries the request and accepts its successful response',()=>{
+  const {c,stats}=env();c.Play_isOn=true;c.Main_helix_api='https://example.invalid/';
+  const requests=[];c.BasexmlHttpGet=(...args)=>requests.push(args);c.Play_partnerIcon=()=>{};c.IMG_404_LOGO='';
+  c.Play_updateStreamLogo();requests[0][5]();stats.timers.at(-1)();assert.equal(requests.length,2);
+  requests[1][4](JSON.stringify({data:[{broadcaster_type:'',profile_image_url:'https://example.invalid/logo.png'}]}));
+  assert.equal(c.Play_LoadLogoSucess,true);
+  assert.equal(c.document.getElementById('stream_info_icon').src,'https://example.invalid/logo.png');
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

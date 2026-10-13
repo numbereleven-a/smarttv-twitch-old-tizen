@@ -541,10 +541,6 @@ function Play_PreStart() {
     // Existing installations without this key continue to start at 720p.
     Play_quality = localStorage.getItem('Play_quality') || '720p';
     Play_qualityPlaying = Play_quality;
-    // Stored by the Settings screen under 'player_mode' as a 1-based index.
-    Play_PlayerMode = Main_getItemInt('player_mode', 1) - 1;
-    if (Play_PlayerMode < Play_PLAYER_HLS || Play_PlayerMode > Play_PLAYER_NATIVE) Play_PlayerMode = Play_PLAYER_HLS;
-
     //"GET_LIVE_DURATION" is available since Tizen version 2.4.
     //That is used to get a Play_LowLatency scenario
     if (parseFloat(Play_TizenVersion) < 2.4) {
@@ -1092,7 +1088,7 @@ function Play_updateStreamLogoError() {
     if (Play_loadingInfoDataTry < Play_loadingInfoDataTryMax) {
         Play_loadingInfoDataTimeout += 500;
         window.setTimeout(function () {
-            if (Play_isOn) Play_updateStreamLogoValues();
+            if (Play_isOn) Play_updateStreamLogo();
         }, 750);
     }
     Play_loadingInfoDataTry++;
@@ -3128,6 +3124,8 @@ function Play_PlayProgressiveUrl(url) {
 
         Play_avplay_hls_player.pause();
         Play_avplay_hls_player.removeAttribute('src');
+        Play_avplay_hls_player.playbackDisposed = false;
+        Play_avplay_hls_player.playbackFailed = false;
         Play_avplay_hls_player.src = url;
         Play_avplay_hls_player.load();
         Play_SetHlsVisible(true);
