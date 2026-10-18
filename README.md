@@ -9,7 +9,7 @@ This fork fixes Twitch live playback on older Samsung Tizen TVs. Channels that e
 **Tested devices:**
 
 - Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1: playback confirmed in 4.0.9. The 4.1 changes have offline checks; this release has not been retested on this TV.
-- Samsung UE32M5550AU (M5550 series), Tizen 3.0, firmware family T-KTSDEUC: the owner confirmed HLS playback with the fMP4-to-TS patch included in 4.1.
+- Samsung UE32M5550AU (M5550 series), Tizen 3.0, firmware family T-KTSDEUC: HLS playback tested with the fMP4-to-TS patch included in 4.1.
 
 | | |
 |---|---|
