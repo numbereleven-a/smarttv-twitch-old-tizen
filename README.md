@@ -2,16 +2,19 @@
 
 [README на русском](README_RU.md)
 
-This fork fixes Twitch live playback on an older Samsung Tizen TV. Channels that enable 1440p may deliver even their 720p and 1080p variants as fragmented MP4 (fMP4), which the legacy native player on the tested TV could not play. The app uses hls.js and MediaSource, separates the H.264 video and AAC audio fragments on the TV, and feeds them to separate media buffers.
+This fork fixes Twitch live playback on older Samsung Tizen TVs. Channels that enable 1440p may deliver even their 720p and 1080p variants as fragmented MP4 (fMP4), which the legacy native player may not play. The app uses hls.js and MediaSource. On Tizen 2.4 it separates H.264 video and AAC audio into separate media buffers. On Tizen 3.0 it converts fMP4 fragments to MPEG-TS before hls.js remuxes them into MP4 accepted by the TV.
 
 **This enables up to 1080p on tested 1440p-enabled channels; it does not add 1440p playback.**
 
-**Tested device:** Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1. No other TV model has been confirmed.
+**Tested devices:**
+
+- Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1: playback confirmed in 4.0.9. The 4.1 changes have offline checks; this release has not been retested on this TV.
+- Samsung UE32M5550AU (M5550 series), Tizen 3.0, firmware family T-KTSDEUC: the owner confirmed HLS playback with the fMP4-to-TS patch included in 4.1.
 
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Package version | 4.0.10 |
+| Release / package version | 4.1 / 4.1.0 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 
@@ -30,7 +33,7 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.0.10 keeps the application identifiers used by 4.0.5, 4.0.6, 4.0.7, 4.0.8 and 4.0.9. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
+Version 4.1 keeps the application identifiers used by 4.0.5 through 4.0.10. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 
@@ -50,11 +53,13 @@ The live stream player has three modes:
 - **Native start timeout (seconds):** choose 10, 15, 20 or 30 seconds in Player settings. The value applies to the next Native playback start; it does not change the LIVE delay.
 - **Native:** forces Samsung AVPlay. It does not silently switch to HLS. Unsupported streams show an error suggesting HLS or Auto.
 
-The previous Native-with-fallback preference becomes Auto on update. An existing HLS preference remains HLS. The owner confirmed playback on KU6000/Tizen 2.4.0 in version 4.0.9. The fixes in 4.0.10 have offline checks; verification on a physical TV is pending.
+The previous Native-with-fallback preference becomes Auto on update. An existing HLS preference remains HLS.
 
 ## Requirements and compatibility
 
-The confirmed configuration is the KU6000/Tizen 2.4.0 above. The app needs a Samsung Tizen Web Application runtime with working MediaSource (MSE), separate H.264/AVC and AAC MP4 SourceBuffers, hardware decoding for the selected rendition, and network access to Twitch's APIs and stream CDN. The tested live renditions used H.264 and AAC. The TV must also accept a WGT signed for that device.
+The confirmed configurations are listed above. The app needs a Samsung Tizen Web Application runtime with working MediaSource (MSE), separate H.264/AVC and AAC MP4 SourceBuffers, hardware decoding for the selected rendition, and network access to Twitch's APIs and stream CDN. The tested live renditions used H.264 and AAC. The TV must also accept a WGT signed for that device.
+
+The new fMP4-to-TS fragment loader is enabled only on Tizen 3 and later. On Tizen 2.4, hls.js keeps its original loader and the existing fMP4 buffer separation. Offline checks cover both latency profiles and the conversion path; they do not replace a physical Tizen 2.4 test. The Tizen 3 fix skips LL-HLS parts; those parts retain the original fMP4 path.
 
 The app remembers the last live quality explicitly selected by the user. The initial preference on first launch is 720p.
 
@@ -65,6 +70,8 @@ The remuxer handles the multiplexed Twitch fMP4 layout validated during developm
 ## Upstream project
 
 The base player is [fgl27/smarttv-twitch](https://github.com/fgl27/smarttv-twitch), including its HLS/MSE work from [PR #328](https://github.com/fgl27/smarttv-twitch/pull/328). The upstream issue describing the older-TV failure is [#316](https://github.com/fgl27/smarttv-twitch/issues/316). Upstream copyright and license notices are retained.
+
+The Tizen 3 fMP4-to-TS converter comes from [psulek/smarttv-twitch-tizen3](https://github.com/psulek/smarttv-twitch-tizen3), under GPL-3.0.
 
 ## Build
 

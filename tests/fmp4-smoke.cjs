@@ -24,6 +24,11 @@ try {
   const input=new Uint8Array(fs.readFileSync(combined));
   const tracks=iso.tracks(input);
   assert.equal(tracks.length,2);
+  const remux=require(path.join(root,'app/general/PlayHlsRemux.js'));
+  const ts=remux.FragmentToTs(input,remux.ParseInit(input));
+  assert.ok(ts&&ts.length%188===0);
+  const transport=path.join(out,'converted.ts');
+  fs.writeFileSync(transport,ts);
   const results=[];
   for(const track of tracks) {
     const isolated=path.join(out,track.type+'.mp4');
@@ -38,8 +43,13 @@ try {
     const frames=file=>fs.readFileSync(file,'utf8').split(/\r?\n/).filter(x=>x&&!x.startsWith('#')).map(x=>x.trim());
     const a=frames(before),b=frames(after);
     assert.deepEqual(b,a);
+    const converted=path.join(out,'converted-'+track.type+'.md5');
+    ffmpeg(['-i',transport,'-map','0:'+stream+':0','-f','framemd5','-y',converted]);
+    // TS has a different time base; compare decoded sample sizes and content hashes.
+    const content=rows=>rows.map(row=>row.split(',').slice(-2).map(x=>x.trim()).join(','));
+    assert.deepEqual(content(frames(converted)),content(a));
     results.push({track:track.type,original_frames:a.length,isolated_frames:b.length,
-      decoded_frames_timestamps_and_hashes_identical:true});
+      decoded_frames_timestamps_and_hashes_identical:true,ts_decoded_content_identical:true});
   }
   fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(results,null,2)+'\n');
   console.log(JSON.stringify(results,null,2));

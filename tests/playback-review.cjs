@@ -94,6 +94,7 @@ function env() {
   c.window=c;vm.createContext(c);
   c.PlaybackDiagnostics.error=noop;
   for (const file of ['app/languages/0_Strings.js','app/general/Fmp4TrackIsolation.js','app/general/LegacyFmp4Buffers.js',
+                      'app/general/PlayHlsRemux.js','app/general/Fmp4ToTsLoader.js',
                       'app/specific/Play.js','app/specific/PlayVod.js']) {
     vm.runInContext(read(file),c,{filename:file});
   }
@@ -514,6 +515,62 @@ check('A failed logo request retries the request and accepts its successful resp
   requests[1][4](JSON.stringify({data:[{broadcaster_type:'',profile_image_url:'https://example.invalid/logo.png'}]}));
   assert.equal(c.Play_LoadLogoSucess,true);
   assert.equal(c.document.getElementById('stream_info_icon').src,'https://example.invalid/logo.png');
+});
+check('Tizen 2.4 keeps the original HLS config in both latency modes; Tizen 3 enables conversion',()=>{
+  const {c}=env();
+  for(const version of ['2.4.0',2.4,undefined,'unknown','3.0',3]) {
+    c.Play_TizenVersion=version;
+    for(const lowLatency of [false,true]) {
+      c.Play_LowLatency=lowLatency;
+      const config=c.Play_GetHlsConfig();
+      const enabled=parseFloat(version)>=3;
+      assert.equal(Object.hasOwn(config,'fLoader'),enabled);
+      if(enabled) { assert.equal(config.fLoader,c.Fmp4ToTsLoader);delete config.fLoader; }
+      assert.deepEqual(JSON.parse(JSON.stringify(config)),{
+        enableWorker:false,lowLatencyMode:lowLatency,
+        liveSyncDurationCount:lowLatency?2:3,liveMaxLatencyDurationCount:lowLatency?4:6
+      });
+    }
+  }
+});
+check('Fragment loader converts media, preserves init/parts/TS/failures and forwards loader callbacks',()=>{
+  const {c}=env();let conversions=0,aborted=0,destroyed=0;
+  const stats={loaded:4};const network={fixture:true};
+  const original=new Uint8Array([1,2,3,4]).buffer;
+  const ts=new Uint8Array([0x47,0,0,0]);
+  let throwConversion=false;
+  c.PlayHlsRemux_GetInit=()=>({tracks:{}});
+  c.PlayHlsRemux_FragmentToTs=()=>{conversions++;if(throwConversion)throw Error('Fixture conversion error');return ts;};
+  c.Hls.DefaultConfig={loader:class {
+    constructor() { this.stats=stats; }
+    load(context,config,callbacks) {
+      callbacks.onProgress(stats,context,original,network);
+      callbacks.onSuccess({data:original},stats,context,network);
+    }
+    abort() { aborted++; }
+    destroy() { destroyed++; }
+    getCacheAge() { return 5; }
+    getResponseHeader(name) { return name==='Content-Type'?'video/mp4':null; }
+  }};
+  const loader=new c.Fmp4ToTsLoader({});assert.equal(loader.stats,stats);
+  const media={frag:{sn:1,initSegment:{data:new Uint8Array([0])}}};
+  const init={frag:{sn:'initSegment'}};
+  const part={frag:media.frag,part:{index:0}};
+  const plainTs={frag:{sn:2}};
+  for(const context of [media,init,part,plainTs]) {
+    let response,progress=0;
+    loader.load(context,{}, {
+      onProgress(s,ctx,data,net) { assert.equal(s,stats);assert.equal(ctx,context);assert.equal(data,original);assert.equal(net,network);progress++; },
+      onSuccess(r,s,ctx,net) { response=r;assert.equal(s,stats);assert.equal(ctx,context);assert.equal(net,network); }
+    });
+    assert.equal(response.data,context===media?ts.buffer:original);assert.equal(progress,1);
+    assert.equal(loader.context,context);
+  }
+  assert.equal(conversions,1);
+  throwConversion=true;
+  loader.load(media,{}, {onProgress(){},onSuccess(r){assert.equal(r.data,original);}});
+  assert.equal(loader.getCacheAge(),5);assert.equal(loader.getResponseHeader('Content-Type'),'video/mp4');
+  loader.abort();loader.destroy();assert.equal(aborted,1);assert.equal(destroyed,1);
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

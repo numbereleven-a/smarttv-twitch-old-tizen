@@ -313,21 +313,21 @@ var Play_offsettimeMinus = 0;
 
 function Play_GetHlsConfig() {
     // Conservative profiles: LL reduces latency without aggressive auto-seek behavior.
-    if (Play_LowLatency) {
-        return {
-            enableWorker: false,
-            lowLatencyMode: true,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 4
-        };
-    }
-
-    return {
+    var config = {
         enableWorker: false,
-        lowLatencyMode: false,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 6
+        lowLatencyMode: !!Play_LowLatency,
+        liveSyncDurationCount: Play_LowLatency ? 2 : 3,
+        liveMaxLatencyDurationCount: Play_LowLatency ? 4 : 6
     };
+
+    // On Tizen 3.0 MSE cannot decode Twitch's fMP4 (MEDIA_ERR_DECODE), but it does play MPEG-TS, so
+    // every fMP4 fragment is converted to MPEG-TS before hls.js sees it (general/Fmp4ToTsLoader.js).
+    // On Tizen < 3 (working fMP4 + LegacyFmp4Buffers path) the property is not set at all, so hls.js
+    // keeps its own loader and nothing else changes.
+    var fragmentLoader = typeof Play_GetHlsFragmentLoader === 'function' ? Play_GetHlsFragmentLoader() : undefined;
+    if (fragmentLoader) config.fLoader = fragmentLoader;
+
+    return config;
 }
 
 function initHLSPlayer() {
