@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://example.org/smarttv-twitch-old-tizen-405" version="4.1.0" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://example.org/smarttv-twitch-old-tizen-405" version="4.1.1" viewmodes="maximized">
   <access origin="*" subdomains="true">
   </access>
   <tizen:application id="OldTzn405T.SmartTV" package="OldTzn405T" required_version="2.3" />
@@ -9,7 +9,7 @@
   <feature name="http://www.samsungdforum.com/feature/Keyboard" />
   <icon src="icon-405.png" />
   <license xml:lang="en-gb" href="http://www.gnu.org/licenses/gpl.html">GNU GENERAL PUBLIC LICENSE</license>
-  <name>Twitch Old Tizen 4.1</name>
+  <name>Twitch Old Tizen 4.1.1</name>
   <tizen:privilege name="http://tizen.org/privilege/application.launch" />
   <tizen:privilege name="http://developer.samsung.com/privilege/avplay" />
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice" />

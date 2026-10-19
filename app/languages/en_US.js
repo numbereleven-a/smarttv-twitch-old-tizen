@@ -86,7 +86,7 @@ function en_USLang() {
     STR_HR = ' Hr';
     STR_SOURCE = 'Source';
     STR_VERSION = 'Version: ';
-    STR_TWITCH_TV = 'SmartTV Client for Twitch';
+    STR_TWITCH_TV = 'Twitch Old Tizen';
     STR_CLOSE_THIS = 'Press back or enter key to close this.';
     STR_PLAYER = 'Player Related:';
     STR_CHAT = 'Chat Related:';
@@ -103,12 +103,26 @@ function en_USLang() {
         'Start a search: from side panel click search, writing the search press the Enter key on the virtual keyboard and choose a search option';
     STR_CONTROLS_MAIN_14 = 'About this application: from side panel click about';
     STR_ABOUT_INFO_1 =
-        "This is a SmartTV Client for Twitch developed by a individual on his free time, for TVs that don't have access to a good official application, released for free to anyone who wants to use it.";
+        'A Twitch client for older Samsung Tizen TVs. Plays supported H.264/AAC streams up to 1080p, including channels with 1440p enabled. Playback has been confirmed on Samsung UE50KU6000 (Tizen 2.4.0) and UE32M5550AU (Tizen 3.0) with version 4.1. This does not add 1440p playback.';
     STR_ABOUT_INFO_2_SOURCE = 'This version of the app is for test in browser only!';
-    STR_ABOUT_INFO_3 = 'Contact information:';
-    STR_ABOUT_INFO_4 = 'This is an open source application licensed under the GNU General Public License v3.0, check it on github';
-    STR_ABOUT_INFO_5 = 'github.com/fgl27/smarttv-twitch';
-    STR_ABOUT_INFO_6 = 'This application uses following dependencies:';
+    STR_ABOUT_INFO_3 = 'Issues and support:';
+    STR_ABOUT_INFO_4 = 'An open source application licensed under the GNU General Public License v3.0.';
+    STR_ABOUT_INFO_5 = 'Project: github.com/numbereleven-a/smarttv-twitch-old-tizen<br>' +
+        'Original project: github.com/fgl27/smarttv-twitch<br>' +
+        'Tizen 3 fMP4-to-TS converter: github.com/psulek/smarttv-twitch-tizen3 (GPL-3.0)';
+    STR_ABOUT_INFO_6 = 'Dependencies and build tools:';
+    STR_ABOUT_SUPPORT_ORIGINAL = 'To support the original author, visit the original project page on GitHub.';
+    STR_LOGIN_METHOD = 'Choose a sign-in method';
+    STR_LOGIN_DEVICE = 'Sign in with Twitch - code on TV';
+    STR_LOGIN_LEGACY = 'fgl27 smarttv-twitch method';
+    STR_LOGIN_DEVICE_INSTRUCTIONS = 'On your phone or computer, open twitch.tv/activate, sign in to the account below and enter the code shown on this TV. Back returns to the sign-in methods.';
+    STR_LOGIN_LOADING = 'Requesting a code from Twitch...';
+    STR_LOGIN_WAITING = 'Waiting for confirmation on Twitch...';
+    STR_LOGIN_VERIFYING = 'Checking the authorized account...';
+    STR_LOGIN_FAILED = 'Could not sign in. Your previous authorization has been kept.';
+    STR_LOGIN_EXPIRED = 'The code has expired.';
+    STR_LOGIN_RETRY = 'Press OK to request a new code, or Back to choose another method.';
+    STR_LOGIN_TIME_LEFT = 'Code expires in ';
     STR_ABOUT_INFO_7 = 'irc-message - Performant, streaming IRC message parser (https://github.com/sigkell/irc-message)';
     STR_ABOUT_INFO_8 = 'Fontastic - Create your customized icon fonts in seconds (http://app.fontastic.me)';
     STR_ABOUT_INFO_9 =
@@ -279,8 +293,6 @@ function en_USLang() {
     STR_THUMB_RESOLUTION = 'Thumbnails quality';
     STR_THUMB_RESOLUTION_SUMARRY =
         "Default thumbnails resolution for live, videos and games (can't be applied for clips) a lower value will help the app load faster but the thumbnail may look blurry";
-    STR_PAYPAL_SUMMARY = 'Paypal donations use bellow link:';
-    STR_BITCOIN_SUMMARY = 'Bitcoin donations use wallet address:';
     STR_PLAYER_PROBLEM_2 = 'Connection failed, unable to load second stream info';
     STR_PLAYER_RESYNC = 'Player Auto Sync';
     STR_PLAYER_AUTO_BIG = 'Main window';
@@ -452,23 +464,6 @@ function en_USLang() {
     STR_WARNING_NEW =
         "Twitch is shutting down some of they API, making necessary to update all app API calls to they new API, the new API is different because of that it demands a lot of work.<br><br>Because of that the app is going thru a update phase, during this time some app content may not work.<br><br>Be aware with this new Twitch API is necessary to add a User and a Authentication key, if you don’t you may not have access to any content in future updates or after Twitch completely shutting they old API.<br><br>Some users may need to reinstall the app...If you have problem after see this warning, hold channel key up until you see a warning, now hold key down until the app restar, if that doesn't work, reinstall  the app.<br><br>This dialog will auto hide in 1 minute, or press any key to hide it";
     STR_FAIL_VOD_INFO = 'Fail to load VOD info';
-    STR_PROXY_DONATE_SUMMARY = 'If you wanna to thanks the proxy server maintainer use the link:';
-
-    STR_TTV_LOL = 'TTV LOL';
-    STR_PURPLE_ADBLOCK = 'Purple Adblock ';
-
-    STR_PROXY_TIMEOUT = 'Proxy timeout (time in seconds)';
-    STR_PROXY_TIMEOUT_SUMMARY =
-        'If the proxy server is out this will be the time that will take to "give up" on the connection and fallback to default Twitch implementation';
-
-    PROXY_SERVICE = 'Proxy: ';
-    PROXY_SERVICE_STATUS = 'Enabled and working';
-    PROXY_SERVICE_OFF = 'Disabled in settings';
-    PROXY_SERVICE_FAIL = 'Not working, fail %x times';
-
-    PROXY_SETTINGS = 'Proxy Settings (Internet censorship and related proxy)';
-    PROXY_SETTINGS_SUMMARY =
-        'Only one proxy can be enable, enables proxy server to get stream links from a different server, that may allow you to see content that is forbidden on yours region and avoid ads, disable this if you have any live stream issue too many or longer buffers, freezes or slow connection that may cause the stream quality to drop.';
     STR_FORCE_HTTP = 'Force HTTP';
     STR_FORCE_HTTP_SUMMARY =
         "Some devices can't perform some HTTPS requests with may cause the player not to work, setting this will force some connections to use HTTP only, this may solve player and related issues";

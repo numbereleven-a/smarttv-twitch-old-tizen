@@ -189,7 +189,7 @@ check('R7b: CRLF master playlists must parse like LF',()=>{
   assert.equal(c.Play_extractQualities(text).length,1,'CRLF playlist yields zero renditions');
 });
 check('R8: a previous channel token response must be ignored after channel switch',()=>{
-  const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;c.use_proxy=false;
+  const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;
   c.Play_Headers=[];c.Play_live_token='{"channel":"%x"}';
   c.Play_state=c.Play_STATE_LOADING_TOKEN;c.Play_loadDataRequest();
   const oldRequest=stats.requests[0];
@@ -245,7 +245,7 @@ check('Media recovery is bounded and stopped controllers cannot affect playback'
   assert.equal(stats.terminal,terminal);
 });
 check('Requests from a closed and reopened same channel are rejected',()=>{
-  const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;c.use_proxy=false;
+  const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;
   c.Play_Headers=[];c.Play_live_token='{"channel":"%x"}';c.Play_state=c.Play_STATE_LOADING_TOKEN;
   c.Play_loadDataRequest();const old=stats.requests[0];c.Play_InvalidateSession();c.Play_loadDataRequest();
   old.respond({});assert.equal(stats.requests.length,2);assert.ok(old.aborted);
@@ -257,7 +257,7 @@ check('A master without EXT-X-MEDIA or BANDWIDTH still keeps a valid rendition',
 check('Reload gets a fresh token for the same channel and retains the playing quality',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Play_isLive=true;c.Play_LiveUseHls=true;
   c.Play_qualityPlaying='1080p60';c.Play_quality='720p';
-  c.Main_values.Play_selectedChannel_id='123';c.use_proxy=false;c.Play_Headers=[];
+  c.Main_values.Play_selectedChannel_id='123';c.Play_Headers=[];
   c.Play_live_token='{"channel":"%x"}';c.Play_state=c.Play_STATE_LOADING_TOKEN;
   c.Play_selectedChannel_id_Old='previous_channel';
   c.Play_loadDataRequest();const oldRequest=stats.requests[0];
@@ -265,7 +265,7 @@ check('Reload gets a fresh token for the same channel and retains the playing qu
   c.Play_RetryLater(()=>{throw new Error('A stale retry ran');},100);
   const staleRetry=stats.timers[stats.timers.length-1];
   // Metadata, chat and UI boundaries; Play_Start and the token request remain real.
-  for(const name of ['Play_ResetProxy','Main_empty','Main_SaveValues','UserLiveFeed_Hide',
+  for(const name of ['Main_empty','Main_SaveValues','UserLiveFeed_Hide',
     'UserLiveFeed_SetFeedPicText','ChatLive_Clear','Play_updateStreamInfoStart','Play_updateStreamInfo',
     'PlayClip_UpdateGameInfo','Play_IconsResetFocus','PlayClip_HideShowNext','Main_handleKeyUp'])c[name]=()=>{};
   c.IMG_404_LOGO_TEMP='';c.PlayClip_qualities=[];
@@ -381,7 +381,7 @@ check('Auto can use HLS when playlist detection fails; HLS mode does not need a 
 check('Player initialization keeps Auto on a clean install and preserves saved modes and accounts',()=>{
   for(const [saved,expected] of [[null,1],['2',1],['1',0],['3',2]]) {
     const {c}=env(),noop=()=>{};
-    const stored=new Map([['AddUser_UsernameArray','TEST_ACCOUNT_STATE']]);
+    const stored=new Map([['AddUser_UsernameArray','TEST_ACCOUNT_STATE'],['ttv_lolProxy','2'],['purple_adblock','2']]);
     if(saved!==null)stored.set('player_mode',saved);
     c.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
     vm.runInContext(read('app/specific/Settings.js'),c);
@@ -390,7 +390,7 @@ check('Player initialization keeps Auto on a clean install and preserves saved m
       vm.runInContext(main.match(new RegExp('function '+name+'\\([^]*?\\n\\}'))[0],c);
     }
     for(const name of ['Settings_SetBuffers','Settings_SetClock','Main_SetThumb','Settings_SetAnimations',
-      'Settings_ShowCounter','Settings_proxy_set_start','Settings_set_http','Play_ChatSize','Play_ChatBackgroundChange','Play_SetChatFont'])c[name]=noop;
+      'Settings_ShowCounter','Settings_set_http','Play_ChatSize','Play_ChatBackgroundChange','Play_SetChatFont'])c[name]=noop;
     c.PlaybackDiagnostics.setEnabled=noop;c.Main_getElementById=id=>c.document.getElementById(id);
     c.tizen={systeminfo:{getCapability:()=> '2.4.0'}};c.webapis.avplay=c.Play_avplay;c.webapis.preview={setPreviewData:noop};
     c.IMG_404_LOGO='';c.AddCode_clientId='example-client';c.AddCode_client_backup='example-client';
@@ -399,6 +399,10 @@ check('Player initialization keeps Auto on a clean install and preserves saved m
     assert.equal(c.Play_PlayerMode,expected,'Player mode after full initialization, saved='+saved);
     assert.equal(c.Settings_Obj_default('player_mode'),expected);
     assert.equal(stored.get('AddUser_UsernameArray'),'TEST_ACCOUNT_STATE');
+    assert.equal(Object.hasOwn(c.Settings_value,'ttv_lolProxy'),false);
+    assert.equal(Object.hasOwn(c.Settings_value,'purple_adblock'),false);
+    c.Play_isOn=true;c.Play_state=c.Play_STATE_LOADING_TOKEN;c.Play_Headers=[];c.Play_live_token='{"channel":"%x"}';
+    c.Play_loadDataRequest();assert.equal(c.Play_requests.at(-1).url,'https://gql.twitch.tv/gql');
   }
 });
 check('Five timestamped errors stay in memory, include sanitized exception text and reset after restart',()=>{
@@ -571,6 +575,131 @@ check('Fragment loader converts media, preserves init/parts/TS/failures and forw
   loader.load(media,{}, {onProgress(){},onSuccess(r){assert.equal(r.data,original);}});
   assert.equal(loader.getCacheAge(),5);assert.equal(loader.getResponseHeader('Content-Type'),'video/mp4');
   loader.abort();loader.destroy();assert.equal(aborted,1);assert.equal(destroyed,1);
+});
+function loginEnv() {
+  const state=env(),c=state.c,noop=()=>{};
+  for(const file of ['app/specific/AddUser.js','app/specific/AddCode.js','app/specific/AddCodeDevice.js',
+    'app/languages/en_US.js','app/languages/default.js'])vm.runInContext(read(file),c,{filename:file});
+  c.en_USLang();c.DefaultLang();
+  c.AddCode_clientId='example-client';c.AddCode_client_token='example-secret';c.AddCode_redirect_uri='https://example.invalid/login';
+  c.Main_Bearer='Bearer ';c.Main_Bearer_User_Headers=[['Client-ID',c.AddCode_clientId],['Authorization',null]];
+  c.Main_Bearer_Headers=[['Client-ID',c.AddCode_clientId],['Authorization','Bearer example-app-access']];
+  c.Main_values.Users_AddcodePosition=0;c.Main_Users=6;
+  c.AddUser_UsernameArray=[{name:'example_user',display_name:'Example',access_token:'example-old-access',refresh_token:'example-old-refresh',expires_in:3600}];
+  c.Main_getElementById=id=>c.document.getElementById(id);
+  const input=c.document.getElementById('oauth_input');
+  Object.assign(input,{value:'',focus:noop,blur:noop,cloneNode:()=>input,parentNode:{replaceChild:noop}});c.Main_AddCodeInput=input;
+  for(const name of ['Main_CounterDialogRst','ScreensObj_SetTopLable','Main_HideWarningDialog','Main_HideLoadDialog',
+    'Main_SaveValues','Main_SwitchScreen','Main_showLoadDialog','Users_init','ChannelContent_setFollow'])c[name]=noop;
+  c.Main_showWarningDialog=()=>state.stats.warning++;
+  c.Main_isControlsDialogShown=c.Main_isAboutDialogShown=()=>false;
+  Object.assign(c,{KEY_RETURN:10009,KEY_LEFT:37,KEY_RIGHT:39,KEY_ENTER:13});
+  const stored=new Map([['AddUser_UsernameArray',JSON.stringify(c.AddUser_UsernameArray)]]);
+  c.Main_setItem=(key,value)=>stored.set(key,value);state.stored=stored;
+  state.begin=()=>{
+    c.AddCode_init();c.AddCode_handleKeyDown({keyCode:13});
+    state.stats.requests.at(-1).respond(JSON.stringify({device_code:'example-device-code',user_code:'EXAMPLECODE',
+      expires_in:60,interval:5,verification_uri:'https://www.twitch.tv/activate?device-code=EXAMPLECODE'}));
+  };
+  return state;
+}
+check('Add user offers methods before the keyboard and opens the selected sign-in without another dialog',()=>{
+  for(const method of ['device','legacy']) {
+    const {c,stats}=loginEnv();let keyboard=0,switches=0;
+    const input=c.document.getElementById('user_input');
+    Object.assign(input,{value:'',focus:()=>keyboard++,blur:()=>{},cloneNode:()=>input,parentNode:{replaceChild:()=>{}}});
+    c.Main_AddUserInput=input;c.Main_addUser=17;c.Main_Live=1;
+    Object.assign(c,{KEY_RETURN_Q:81,KEY_KEYBOARD_DELETE_ALL:65376,KEY_KEYBOARD_DONE:65377,KEY_KEYBOARD_CANCEL:65378,KEY_KEYBOARD_BACKSPACE:8,KEY_KEYBOARD_SPACE:32});
+    c.Main_SwitchScreenAction=()=>switches++;
+    c.AddUser_init();
+    assert.equal(c.AddCode_LoginMethod,'choice');assert.equal(keyboard,0);assert.equal(stats.requests.length,0);
+    c.AddCode_handleKeyDown({keyCode:method==='device'?37:39});
+    c.AddCode_handleKeyDown({keyCode:13});
+    assert.equal(keyboard,1);assert.equal(c.AddUser_LoginMethod,method);
+    c.AddUser_KeyboardEvent({keyCode:c.KEY_RETURN});
+    assert.equal(c.AddCode_LoginMethod,'choice');assert.equal(c.AddUser_LoginMethod,null);
+    c.AddCode_handleKeyDown({keyCode:method==='device'?37:39});c.AddCode_handleKeyDown({keyCode:13});
+    c.AddUser_SaveNewUser(JSON.stringify({data:[{login:'example_second',id:'2',display_name:'Second',profile_image_url:''}]}));
+    assert.equal(c.AddCode_LoginMethod,method);assert.equal(c.Main_values.Users_AddcodePosition,1);
+    assert.equal(c.Users_ShowAutetication,false);assert.equal(switches,0);
+    assert.equal(c.AddUser_UsernameArray[0].access_token,'example-old-access');
+    if(method==='device')assert.equal(stats.requests.at(-1).url,'https://id.twitch.tv/oauth2/device');
+    else assert.equal(stats.requests.length,0);
+  }
+});
+check('Sign-in offers both methods and the legacy route retains its original code exchange',()=>{
+  const {c,stats,stored}=loginEnv();const before=stored.get('AddUser_UsernameArray');c.AddCode_init();
+  assert.equal(stats.requests.length,0);assert.equal(c.AddCode_LoginMethod,'choice');
+  c.AddCode_handleKeyDown({keyCode:40});c.AddCode_handleKeyDown({keyCode:13});assert.equal(c.AddCode_LoginMethod,'legacy');
+  c.AddCode_Code='example-authorization-code';c.AddCode_requestTokens();
+  assert.equal(stats.requests[0].method,'POST');
+  assert.ok(stats.requests[0].url.includes('grant_type=authorization_code'));
+  assert.ok(stats.requests[0].url.includes(c.AddCode_redirect_uri));
+  assert.equal(stored.get('AddUser_UsernameArray'),before);c.AddCode_exit();
+});
+check('Device login verifies the account before saving and uses the existing refresh mechanism',()=>{
+  const {c,stats,stored,begin}=loginEnv();const before=stored.get('AddUser_UsernameArray');begin();
+  assert.equal(stats.requests[0].url,'https://id.twitch.tv/oauth2/device');
+  assert.equal(c.document.getElementById('oauth_device_code').textContent,'EXAMPLECODE');
+  c.AddCode_DevicePoll();assert.ok(stats.requests[1].body.includes(encodeURIComponent('urn:ietf:params:oauth:grant-type:device_code')));
+  stats.requests[1].respond(JSON.stringify({access_token:'example-new-access',refresh_token:'example-new-refresh',expires_in:3600}));
+  assert.equal(stored.get('AddUser_UsernameArray'),before);
+  assert.equal(stats.requests[2].url,'https://id.twitch.tv/oauth2/validate');
+  stats.requests[2].respond(JSON.stringify({login:'example_user',client_id:c.AddCode_clientId,scopes:Array.from(c.AddCode_Scopes)}));
+  assert.equal(c.AddUser_UsernameArray[0].access_token,'example-new-access');
+  assert.equal(JSON.parse(stored.get('AddUser_UsernameArray'))[0].refresh_token,'example-new-refresh');
+  assert.equal(c.AddCode_Device,null);assert.equal(c.Main_values.Main_Go,c.Main_Users);
+  c.AddCode_refreshTokens(0,0,null,null);const refresh=stats.requests.at(-1);
+  assert.ok(refresh.url.includes('grant_type=refresh_token'));assert.ok(refresh.url.includes('example-new-refresh'));
+  refresh.respond(JSON.stringify({access_token:'example-renewed-access',refresh_token:'example-renewed-refresh',expires_in:3600,scope:Array.from(c.AddCode_Scopes)}));
+  assert.equal(JSON.parse(stored.get('AddUser_UsernameArray'))[0].refresh_token,'example-renewed-refresh');
+});
+check('Device login cancellation ignores late token and validation replies without changing saved accounts',()=>{
+  const {c,stats,stored,begin}=loginEnv();const before=stored.get('AddUser_UsernameArray');begin();
+  c.AddCode_DevicePoll();const old=stats.requests.at(-1);c.AddCode_handleKeyDown({keyCode:c.KEY_RETURN});
+  assert.ok(old.aborted);old.respond(JSON.stringify({access_token:'example-late-access',refresh_token:'example-late-refresh',expires_in:3600}));
+  assert.equal(c.AddCode_LoginMethod,'choice');assert.equal(stats.requests.length,2);assert.equal(stored.get('AddUser_UsernameArray'),before);
+  begin();c.AddCode_DevicePoll();stats.requests.at(-1).respond(JSON.stringify({access_token:'example-access',refresh_token:'example-refresh',expires_in:3600}));
+  const validation=stats.requests.at(-1);c.AddCode_exit();
+  validation.respond(JSON.stringify({login:'example_user',client_id:c.AddCode_clientId,scopes:Array.from(c.AddCode_Scopes)}));
+  assert.equal(stored.get('AddUser_UsernameArray'),before);
+});
+check('Leaving the legacy method prevents its late replies and delayed UI callbacks from interrupting device login',()=>{
+  const {c,stats,begin}=loginEnv();c.Main_Authorization='Authorization';
+  c.AddCode_init();c.AddCode_handleKeyDown({keyCode:40});c.AddCode_handleKeyDown({keyCode:13});
+  c.AddCode_Code='example-old-code';c.AddCode_requestTokens();const legacy=stats.requests.at(-1);
+  c.AddCode_exit();begin();const before=c.AddUser_UsernameArray[0].access_token,requests=stats.requests.length;
+  legacy.respond(JSON.stringify({access_token:'example-stale-access',refresh_token:'example-stale-refresh',expires_in:3600}));
+  assert.equal(c.AddUser_UsernameArray[0].access_token,before);assert.equal(stats.requests.length,requests);
+  c.AddCode_ShowMethods();c.AddCode_handleKeyDown({keyCode:40});c.AddCode_handleKeyDown({keyCode:13});
+  c.AddCode_requestTokensFail();const delayed=stats.timers.at(-1);c.AddCode_exit();begin();
+  let keyboard=0;c.Main_AddCodeInput.focus=()=>keyboard++;delayed();
+  assert.equal(keyboard,0);assert.equal(c.AddCode_LoginMethod,'device');
+});
+check('Device login handles pending, slowdown, network timeout and code expiry with a retry option',()=>{
+  const {c,stats,stored,begin}=loginEnv();const before=stored.get('AddUser_UsernameArray');begin();
+  c.AddCode_DevicePoll();stats.requests.at(-1).respond(JSON.stringify({message:'authorization_pending'}),400);
+  assert.equal(stats.timerDelays.at(-1),5000);
+  c.AddCode_DevicePoll();stats.requests.at(-1).respond(JSON.stringify({error:'slow_down'}),400);
+  assert.equal(stats.timerDelays.at(-1),10000);
+  c.AddCode_DevicePoll();stats.requests.at(-1).ontimeout();assert.equal(stats.timerDelays.at(-1),10000);
+  c.AddCode_Device.expires=Date.now()-1000;c.AddCode_DeviceTick();assert.equal(c.AddCode_Device,null);
+  assert.ok(c.document.getElementById('oauth_device_status').textContent.includes(c.STR_LOGIN_EXPIRED));
+  c.AddCode_handleKeyDown({keyCode:13});assert.equal(stats.requests.at(-1).url,'https://id.twitch.tv/oauth2/device');
+  assert.equal(stored.get('AddUser_UsernameArray'),before);
+});
+check('Device login rejects a different account, application or missing scopes without erasing old tokens',()=>{
+  for(const info of [
+    {login:'example_user_extra',client_id:'example-client',scopes:['user:read:follows','user:read:subscriptions','chat:edit','chat:read']},
+    {login:'example_user',client_id:'example-other-client',scopes:['user:read:follows','user:read:subscriptions','chat:edit','chat:read']},
+    {login:'example_user',client_id:'example-client',scopes:[]}
+  ]) {
+    const {c,stats,stored,begin}=loginEnv();const before=stored.get('AddUser_UsernameArray');begin();c.AddCode_DevicePoll();
+    stats.requests.at(-1).respond(JSON.stringify({access_token:'example-access',refresh_token:'example-refresh',expires_in:3600}));
+    stats.requests.at(-1).respond(JSON.stringify(info));
+    assert.equal(c.AddCode_Device,null);assert.equal(stored.get('AddUser_UsernameArray'),before);
+    assert.ok(c.document.getElementById('oauth_device_status').textContent.includes(c.STR_LOGIN_RETRY));
+  }
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

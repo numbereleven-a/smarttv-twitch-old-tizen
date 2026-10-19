@@ -172,26 +172,6 @@ var Settings_value = {
         values: ['no', 'yes'],
         defaultValue: 1
     },
-    ttv_lolProxy: {
-        //Migrated to dialog
-        values: ['no', 'yes'],
-        defaultValue: 1
-    },
-    proxy_timeout: {
-        //Migrated to dialog
-        values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30],
-        defaultValue: 10
-    },
-    purple_adblock: {
-        //Migrated to dialog
-        values: ['no', 'yes'],
-        defaultValue: 1
-    },
-    proxy_settings: {
-        values: ['None'],
-        set_values: [''],
-        defaultValue: 1
-    },
     force_http: {
         values: ['no', 'yes'],
         defaultValue: 1
@@ -377,12 +357,6 @@ function Settings_SetSettings() {
 
     // Player settings title
     div += Settings_DivTitle('play', STR_SETTINGS_PLAYER);
-
-    key = 'proxy_settings';
-    Settings_value_keys.push(key);
-    Settings_value[key].values = [STR_CONTENT_LANG_SUMARRY];
-
-    div += Settings_DivOptionNoSummary(key, PROXY_SETTINGS);
 
     key = 'force_http';
     Settings_value_keys.push(key);
@@ -645,7 +619,6 @@ function Settings_SetDefautls() {
     PlaybackDiagnostics.setEnabled(Settings_Obj_default('playback_debug'));
     Play_EndSettingsCounter = Settings_Obj_default('end_dialog_counter');
     Settings_ShowCounter(Settings_Obj_default('show_screen_counter'));
-    Settings_proxy_set_start();
     Settings_set_http();
 }
 
@@ -723,9 +696,6 @@ function Settings_SetDefault(position) {
     else if (position === 'thumb_quality') Main_SetThumb();
     else if (position === 'global_font_offset') calculateFontSize();
     else if (position === 'show_screen_counter') Settings_ShowCounter(Settings_Obj_default('show_screen_counter'));
-    else if (position === 'ttv_lolProxy') Settings_set_TTV_LOL();
-    else if (position === 'proxy_timeout') Settings_set_proxy_timeout();
-    else if (position === 'purple_adblock') Settings_set_purple_adblock();
     else if (position === 'force_http') {
         Settings_set_http();
         Main_setItem('force_http_override', 2);
@@ -756,8 +726,6 @@ function Settings_set_http() {
         }
 
         Play_hlsBaseURL = Play_hlsBaseURL.replace(b, a);
-        Play_live_ttv_lol_links = Play_live_ttv_lol_links.replace(b, a);
-        proxy_url = proxy_url.replace(b, a);
         PlayVod_hlsBaseURL = PlayVod_hlsBaseURL.replace(b, a);
         Main_helix_api = Main_helix_api.replace(b, a);
     } catch (e) {
@@ -765,69 +733,6 @@ function Settings_set_http() {
     }
 
     console.log('After Main_helix_api ' + Main_helix_api);
-}
-
-function Settings_set_proxy_timeout() {
-    proxy_timeout = Settings_Obj_values('proxy_timeout') * 1000;
-}
-
-function Settings_get_enabled() {
-    if (Settings_Obj_default('ttv_lolProxy') === 1) {
-        return 0;
-    }
-
-    return 1;
-}
-
-var proxyArray = ['ttv_lolProxy'];
-function Settings_set_purple_adblock() {
-    Settings_set_all_proxy('purple_adblock');
-}
-
-function Settings_set_TTV_LOL() {
-    Settings_set_all_proxy('ttv_lolProxy');
-}
-
-function Settings_set_all_proxy(current) {
-    var currentEnable = Settings_Obj_default(current) === 1;
-
-    use_proxy = currentEnable;
-
-    if (currentEnable) {
-        Settings_proxy_set_current(current);
-
-        var i = 0,
-            len = proxyArray.length;
-        for (i; i < len; i++) {
-            if (proxyArray[i] !== current && Settings_Obj_default(proxyArray[i]) === 1) {
-                Settings_DialogRightLeftAfter(proxyArray[i], -1, true);
-            }
-        }
-    }
-}
-
-function Settings_proxy_set_start() {
-    var i = 0,
-        len = proxyArray.length;
-    for (i; i < len; i++) {
-        if (Settings_Obj_default(proxyArray[i]) === 1) {
-            use_proxy = true;
-            Settings_proxy_set_current(proxyArray[i]);
-            break;
-        }
-    }
-}
-
-function Settings_proxy_set_current(current) {
-    if (current === 'purple_adblock') {
-        proxy_url = purple_proxy;
-        proxy_headers = null;
-        proxy_has_parameter = false;
-    } else {
-        proxy_url = Play_live_ttv_lol_links;
-        proxy_headers = ttv_lol_headers;
-        proxy_has_parameter = true;
-    }
 }
 
 function Settings_SetBuffers(whocall) {
@@ -1015,34 +920,10 @@ function Settings_handleKeyDown(event) {
         case KEY_ENTER:
             if (!Settings_cursorY) Languages_init();
             else if (Main_A_includes_B(Settings_value_keys[Settings_cursorY], 'chat_opt')) Settings_DialogShowChat();
-            else if (Main_A_includes_B(Settings_value_keys[Settings_cursorY], 'proxy_settings')) Settings_DialogShowProxy();
             break;
         default:
             break;
     }
-}
-
-function Settings_DialogShowProxy() {
-    var array_no_yes = [STR_NO, STR_YES];
-    Settings_value.ttv_lolProxy.values = array_no_yes;
-    Settings_value.ttv_lolProxy.values = array_no_yes;
-
-    var obj = {
-        proxy_timeout: {
-            defaultValue: Settings_value.proxy_timeout.defaultValue,
-            values: Settings_value.proxy_timeout.values,
-            title: STR_PROXY_TIMEOUT,
-            summary: STR_PROXY_TIMEOUT_SUMMARY
-        },
-        ttv_lolProxy: {
-            defaultValue: Settings_value.ttv_lolProxy.defaultValue,
-            values: Settings_value.ttv_lolProxy.values,
-            title: STR_TTV_LOL,
-            summary: STR_TTV_LOL_SUMMARY
-        }
-    };
-
-    Settings_DialogShow(obj, PROXY_SETTINGS + STR_BR + STR_BR + PROXY_SETTINGS_SUMMARY);
 }
 
 function Settings_DialogShowChat() {

@@ -8,15 +8,16 @@ This fork fixes Twitch live playback on older Samsung Tizen TVs. Channels that e
 
 **Tested devices:**
 
-- Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1: playback confirmed in 4.0.9.
+- Samsung UE50KU6000 (KU6000 series), Tizen 2.4.0, firmware T-JZL6DEUC-1260.1: playback confirmed in 4.1.
 - Samsung UE32M5550AU (M5550 series), Tizen 3.0, firmware family T-KTSDEUC: HLS playback tested with the fMP4-to-TS patch included in 4.1.
 
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Release / package version | 4.1 / 4.1.0 |
+| Release / package version | 4.1.1 / 4.1.1 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
+| Sign-in | Choose Twitch device-code sign-in or the original fgl27 method; see [Authentication](#authentication) |
 
 ## Install
 
@@ -33,7 +34,7 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.1 keeps the application identifiers used by 4.0.5 through 4.0.10. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
+Version 4.1.1 keeps the application identifiers used by 4.0.5 through 4.1. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 
@@ -59,7 +60,7 @@ The previous Native-with-fallback preference becomes Auto on update. An existing
 
 The confirmed configurations are listed above. The app needs a Samsung Tizen Web Application runtime with working MediaSource (MSE), separate H.264/AVC and AAC MP4 SourceBuffers, hardware decoding for the selected rendition, and network access to Twitch's APIs and stream CDN. The tested live renditions used H.264 and AAC. The TV must also accept a WGT signed for that device.
 
-The new fMP4-to-TS fragment loader is enabled only on Tizen 3 and later. On Tizen 2.4, hls.js keeps its original loader and the existing fMP4 buffer separation. Offline checks cover both latency profiles and the conversion path; they do not replace a physical Tizen 2.4 test. The Tizen 3 fix skips LL-HLS parts; those parts retain the original fMP4 path.
+The new fMP4-to-TS fragment loader is enabled only on Tizen 3 and later. On Tizen 2.4, hls.js keeps its original loader and the existing fMP4 buffer separation. Offline checks also cover both latency profiles and the conversion path. The Tizen 3 fix skips LL-HLS parts; those parts retain the original fMP4 path.
 
 The app remembers the last live quality explicitly selected by the user. The initial preference on first launch is 720p.
 
@@ -86,4 +87,11 @@ For installation, enable Developer Mode on the TV, connect it as a Tizen device,
 
 ## Authentication
 
-The original Twitch account authorization flow is retained. The app uses the scopes and authorization process documented by the upstream project; consult its [authentication guide](https://github.com/fgl27/smarttv-twitch#twitchtv-authentication-key).
+Select **Add user** to choose a sign-in method first, then enter your Twitch username. The selected sign-in method opens immediately after the username is added. For an existing user, open its authorization option to choose a method:
+
+- **Sign in with Twitch - code on TV:** the TV displays a code. On your phone or computer, open [twitch.tv/activate](https://www.twitch.tv/activate), sign in to the same Twitch account and enter that code. The TV checks the authorized account before saving access. Back cancels this attempt and returns to the method selection. If the code expires or sign-in fails, press OK for a new code. Failed or cancelled device-code attempts do not erase an existing authorization.
+- **fgl27 smarttv-twitch method:** open the authorization page shown on the TV on your phone or computer, sign in to Twitch, then enter the generated authorization code in the TV app. This is a different flow from twitch.tv/activate. See the [upstream authentication guide and authorization-page link](https://github.com/fgl27/smarttv-twitch#twitchtv-authentication-key).
+
+Updating the app does not require switching methods or signing in again while the saved Twitch authorization remains valid. The new device-code flow has offline checks and a successful code-request check against Twitch; completing sign-in on a physical TV is not yet verified.
+
+TTV LOL and Purple proxy settings have been removed. Live playback requests go directly to Twitch.

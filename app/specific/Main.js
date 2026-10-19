@@ -121,9 +121,7 @@ var Main_classThumb = 'stream_thumbnail_focused';
 var Main_DataAttribute = 'data_attribute';
 
 var Main_version = 401;
-var Main_stringVersion_Min = '4.0.1';
-var Main_minversion = 'January 2025';
-var Main_versionTag = Main_stringVersion_Min + '-' + Main_minversion;
+var Main_versionTag = '';
 var Main_IsNotBrowserVersion = '';
 
 var Main_Periods_Helix = [0, 1, 7, 30, 0];
@@ -862,9 +860,8 @@ function Main_checkVersion() {
             Main_tvModel;
 
         try {
-            console.log('App version: ' + Main_minversion);
-
             Appversion = tizen.application.getAppInfo().version;
+            console.log('App version: ' + Appversion);
             // Retrieving Platform Information https://developer.samsung.com/tv/develop/guides/fundamentals/retrieving-platform-information
             TizenVersion = tizen.systeminfo.getCapability('http://tizen.org/feature/platform.version');
             fw = webapis.productinfo.getFirmware();
@@ -878,11 +875,6 @@ function Main_checkVersion() {
                 'APP ' +
                 STR_VERSION +
                 Appversion +
-                '.' +
-                Main_minversion +
-                (Main_isReleased
-                    ? ''
-                    : '<div style="display: inline-block; color: #FF0000; font-size: 110%; font-weight: bold;"> TEST ONLY</div><br><div style="display: inline-block; color: #FF0000; font-size: 110%; font-weight: bold;">Don\'t use this version unless you are testing or debugging... Go back to github and download the correct release zip that is only 12kb</div>') +
                 STR_BR +
                 'Tizen ' +
                 STR_VERSION +

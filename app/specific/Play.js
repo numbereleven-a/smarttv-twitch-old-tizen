@@ -106,22 +106,6 @@ var Play_DefaultjumpTimers = [];
 var Play_UserLiveFeedPressed = false;
 var Play_base_kraken_headers_Array = [];
 
-var Play_base_parameters = 'reassignments_supported=true&playlist_include_framerate=true&allow_source=true&fast_bread=true&cdm=wv&p=%d';
-var Play_live_ttv_lol_links = 'https://api.ttv.lol/playlist/';
-var ttv_lol_headers = [['X-Donate-To', 'https://ttv.lol/donate']];
-
-var use_proxy;
-var purple_proxy = 'https://jupter.ga/hls/v2/channel/';
-var proxy_timeout = 5000;
-var proxy_url = '';
-var proxy_headers = null;
-var proxy_has_parameter = false;
-
-var proxy_fail_counter = 0;
-var proxy_fail_counter_checker = 0;
-
-//var proxy_ping_url = 'https://api.ttv
-
 //counterclockwise movement, Vertical/horizontal Play_ChatPositions
 //sizeOffset in relation to the size
 var Play_ChatPositionVal = [
@@ -814,7 +798,6 @@ function Play_Start(reloadQuality, automaticRetry) {
     Main_textContent('stream_live_delay', '');
     Main_innerHTML('pause_button', '<div><i class="pause_button3d icon-pause"></i></div>');
     Play_showBufferDialog(STR_LOADING_STREAM);
-    Play_ResetProxy();
     Play_ShowBlackOverlay();
     if (Play_avplay_hls_player) Play_avplay_hls_player.style.visibility = 'hidden';
 
@@ -829,7 +812,6 @@ function Play_Start(reloadQuality, automaticRetry) {
     //Chat delay
     document.getElementById('controls_' + Play_controlsChatDelay).style.display = '';
     document.getElementById('controls_' + Play_controlsChatSend).style.display = '';
-    document.getElementById('controls_' + Play_controlsProxy).style.display = '';
 
     document.getElementById('controls_' + Play_controlsLowLatency).style.display = Play_CanLowLatency ? '' : 'none';
 
@@ -1229,66 +1211,47 @@ function Play_LoadLogo(ImgObjet, link) {
     ImgObjet.src = link;
 }
 
-function Play_loadData(skipProxy) {
+function Play_loadData() {
     Play_loadingDataTry = 0;
     Play_loadingDataTimeout = 2000 + (Play_RestoreFromResume ? 3000 : 0);
-    Play_loadDataRequest(skipProxy);
+    Play_loadDataRequest();
 }
 
 var Play_410ERROR = true;
 var Play_hlsBaseURL = 'https://usher.ttvnw.net/api/channel/hls/';
-function Play_loadDataRequest(skipProxy) {
+function Play_loadDataRequest() {
     try {
         var theUrl;
         var xmlHttp = new XMLHttpRequest();
         var session = Play_sessionId;
         var channel = Main_values.Play_selectedChannel;
         Play_requests.push(xmlHttp);
-        var headers;
-        var useProxy;
-
-        if (use_proxy && !skipProxy && Play_state === Play_STATE_LOADING_TOKEN) {
-            //if at te end of a request the values are different we have a issues
-            proxy_fail_counter_checker = proxy_fail_counter;
-
-            useProxy = true;
-            Play_state = Play_STATE_LOADING_PLAYLIST;
-            headers = proxy_headers ? proxy_headers : [];
-
-            var URL_parameters = Play_base_parameters.replace('%d', Math.random() * 100000);
-            var url = proxy_url + Main_values.Play_selectedChannel + (proxy_has_parameter ? '.m3u8' + encodeURIComponent('?' + URL_parameters) : '');
-
-            xmlHttp.open('GET', url, true);
-
-            xmlHttp.timeout = proxy_timeout;
+        var headers = Play_Headers;
+        if (Play_state === Play_STATE_LOADING_TOKEN) {
+            xmlHttp.open('POST', 'https://gql.twitch.tv/gql', true);
         } else {
-            headers = Play_Headers;
-            if (Play_state === Play_STATE_LOADING_TOKEN) {
-                xmlHttp.open('POST', 'https://gql.twitch.tv/gql', true);
-            } else {
-                if (!Play_tokenResponse || !Play_tokenResponse.hasOwnProperty('value') || !Play_tokenResponse.hasOwnProperty('signature')) {
-                    Play_410ERROR = true;
-                    console.log('Play_410ERROR ' + Play_410ERROR);
-                    Play_loadDataError();
-                    return;
-                }
-
-                theUrl =
-                    Play_hlsBaseURL +
-                    Main_values.Play_selectedChannel +
-                    '.m3u8?&token=' +
-                    encodeURIComponent(Play_tokenResponse.value) +
-                    '&sig=' +
-                    Play_tokenResponse.signature +
-                    '&playlist_include_framerate=true&reassignments_supported=true&allow_source=true&fast_bread=true&cdm=wv&p=' +
-                    Main_RandomInt();
-
-                xmlHttp.open('GET', theUrl, true);
-
-                // Load only the selected, FHD-compatible rendition after parsing.
+            if (!Play_tokenResponse || !Play_tokenResponse.hasOwnProperty('value') || !Play_tokenResponse.hasOwnProperty('signature')) {
+                Play_410ERROR = true;
+                console.log('Play_410ERROR ' + Play_410ERROR);
+                Play_loadDataError();
+                return;
             }
-            xmlHttp.timeout = Play_loadingDataTimeout;
+
+            theUrl =
+                Play_hlsBaseURL +
+                Main_values.Play_selectedChannel +
+                '.m3u8?&token=' +
+                encodeURIComponent(Play_tokenResponse.value) +
+                '&sig=' +
+                Play_tokenResponse.signature +
+                '&playlist_include_framerate=true&reassignments_supported=true&allow_source=true&fast_bread=true&cdm=wv&p=' +
+                Main_RandomInt();
+
+            xmlHttp.open('GET', theUrl, true);
+
+            // Load only the selected, FHD-compatible rendition after parsing.
         }
+        xmlHttp.timeout = Play_loadingDataTimeout;
 
         if (headers && headers.length) {
             var len = headers.length;
@@ -1309,10 +1272,6 @@ function Play_loadDataRequest(skipProxy) {
                     Play_loadingDataTry = 0;
                     if (Play_isOn) Play_loadDataSuccess(xmlHttp.responseText);
                     //Play_410ERROR = false;
-                } else if (useProxy && PlayHLS_CheckProxyResultFail(xmlHttp.responseText)) {
-                    //if proxy fails fall back to normal request
-                    Play_state = Play_STATE_LOADING_TOKEN;
-                    Play_loadData(true);
                 } else if (!Settings_Obj_default('force_http_override') && xmlHttp.status === 0 && Main_startsWith(Play_hlsBaseURL, 'https:')) {
                     //https issue
                     //some devices are triggered with a status 0 when trying to get the playlist URL related to cors
@@ -1321,10 +1280,8 @@ function Play_loadDataRequest(skipProxy) {
                     //problem is that some devices will not allow http connection they demand https
 
                     Play_hlsBaseURL = Play_hlsBaseURL.replace('https:', 'http:');
-                    Play_live_ttv_lol_links = Play_live_ttv_lol_links.replace('https:', 'http:');
-                    proxy_url = proxy_url.replace('https:', 'http:');
 
-                    Play_loadDataRequest(skipProxy);
+                    Play_loadDataRequest();
                 } else if (xmlHttp.status === 403 || xmlHttp.status === 404) {
                     //forbidden access
                     //404 = off line
@@ -1351,16 +1308,6 @@ function Play_loadDataRequest(skipProxy) {
         PlaybackDiagnostics('Playback operation failed');
         Play_loadDataError();
     }
-}
-
-function PlayHLS_CheckProxyResultFail(responseText) {
-    if (Main_A_includes_B(responseText, 'not_found: transcode does not exist')) {
-        return false;
-    }
-
-    proxy_fail_counter++;
-
-    return true;
 }
 
 function Play_loadDataLog(xmlHttp) {
@@ -2223,17 +2170,6 @@ function Play_ClearPlayer() {
     }
 }
 
-function Play_ResetProxy() {
-    Play_A_Control(Settings_get_enabled(), Play_controlsProxy);
-}
-
-function Play_A_Control(value, control) {
-    //After setting we only reset this if the app is close/re opened
-    Play_controls[control].defaultValue = value;
-    if (Play_controls[control].bottomArrows) Play_controls[control].bottomArrows();
-    Play_controls[control].setLable();
-}
-
 function Play_ClearPlay(clearChat) {
     // Play_Playing = false;
     document.body.removeEventListener('keydown', Play_handleKeyDown);
@@ -2320,7 +2256,6 @@ function Play_hidePanel() {
     Play_clearHidePanel();
     Play_ForceHidePannel();
     Play_quality = Play_qualityPlaying;
-    Play_ResetProxy();
 }
 
 function Play_showPanel() {
@@ -2339,24 +2274,7 @@ function Play_showPanel() {
 
 function Play_UpdateVideoStatus() {
     Play_UpdatePlayerLabel();
-    Main_innerHTML('stream_status', Play_UpdateVideoStatusGetProxy());
-}
-
-function Play_UpdateVideoStatusGetProxy() {
-    if (!Play_isOn) {
-        return '';
-    }
-    var proxyString = STR_BR + PROXY_SERVICE;
-
-    if (!use_proxy) {
-        return proxyString + PROXY_SERVICE_OFF;
-    }
-
-    if (proxy_fail_counter > proxy_fail_counter_checker) {
-        return proxyString + PROXY_SERVICE_FAIL.replace('%x', proxy_fail_counter);
-    }
-
-    return proxyString + PROXY_SERVICE_STATUS;
+    Main_innerHTML('stream_status', '');
 }
 
 function Play_ForceShowPannel() {
@@ -3408,7 +3326,6 @@ var Play_controlsChatBright = 12;
 var Play_controlsChatFont = 13;
 var Play_controlsChatDelay = 14;
 var Play_controlsChatForceDis = 15;
-var Play_controlsProxy = 16;
 
 var Play_controlsDefault = Play_controlsChat;
 var Play_Panelcounter = Play_controlsDefault;
@@ -3906,56 +3823,7 @@ function Play_MakeControls() {
         }
     };
 
-    Play_controls[Play_controlsProxy] = {
-        opacity: 0,
-        icons: 'proxy',
-        string: PROXY_SERVICE,
-        values: STR_PROXY_CONTROLS_ARRAY,
-        defaultValue: Settings_get_enabled(),
-        enterKey: function () {
-            var currentProxyEnabled = Settings_get_enabled(),
-                i,
-                key;
 
-            if (this.defaultValue < 1) {
-                key = proxyArray[this.defaultValue];
-                Settings_value[key].defaultValue = 1;
-                Main_setItem(key, 2);
-                Settings_set_all_proxy(key);
-            } else {
-                //reset all proxy to disable
-                i = 0;
-                var len = proxyArray.length;
-                for (i; i < len; i++) {
-                    key = proxyArray[i];
-                    Settings_value[key].defaultValue = 0;
-                    Main_setItem(key, 1);
-                }
-                use_proxy = false;
-            }
-
-            if (currentProxyEnabled !== Settings_get_enabled()) {
-                // Play_showBufferDialog();
-                Play_state = Play_STATE_LOADING_TOKEN;
-                Play_loadData();
-            }
-
-            Play_ResetProxy();
-            Play_UpdateVideoStatus();
-        },
-        updown: function (adder) {
-            this.defaultValue += adder;
-            if (this.defaultValue < 0) this.defaultValue = 0;
-            else if (this.defaultValue > this.values.length - 1) this.defaultValue = this.values.length - 1;
-            this.bottomArrows();
-        },
-        bottomArrows: function () {
-            Play_BottomArrows(this.position);
-        },
-        setLable: function () {
-            Main_textContent('extra_button_text' + this.position, PROXY_SERVICE + this.values[this.defaultValue]);
-        }
-    };
 }
 
 function Play_IconsAddFocus() {

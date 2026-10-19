@@ -16,6 +16,15 @@ var AddCode_UrlToken = 'https://id.twitch.tv/oauth2/token?';
 //Variable initialization end
 
 function AddCode_init() {
+    AddCode_ShowMethods();
+}
+
+function AddCode_LegacyInit() {
+    AddCode_LoginMethod = 'legacy';
+    Main_HideElement('oauth_methods');
+    Main_HideElement('oauth_device');
+    Main_ShowElement('oauth_text');
+    Main_ShowElement('oauth_input');
     AddCode_loadingData = false;
     Main_CounterDialogRst();
     Main_HideWarningDialog();
@@ -34,12 +43,18 @@ function AddCode_init() {
 }
 
 function AddCode_exit() {
-    AddCode_RemoveinputFocus(false);
+    AddCode_DeviceStop();
+    if (AddCode_LoginMethod === 'legacy') AddCode_RemoveinputFocus(false);
+    AddCode_LoginMethod = 'closed';
     document.body.removeEventListener('keydown', AddCode_handleKeyDown);
     Main_HideElement('oauth_scroll');
 }
 
 function AddCode_handleKeyDown(event) {
+    if (AddCode_LoginMethod !== 'legacy') {
+        AddCode_MethodKeyDown(event);
+        return;
+    }
     if (AddCode_loadingData || AddCode_keyBoardOn) return;
 
     switch (event.keyCode) {
@@ -312,6 +327,7 @@ function AddCode_requestTokens() {
 }
 
 function AddCode_requestTokensReady(xmlHttp) {
+    if (AddCode_LoginMethod !== 'legacy') return;
     if (xmlHttp.readyState === 4) {
         if (xmlHttp.status === 200) {
             AddCode_requestTokensSucess(xmlHttp.responseText);
@@ -331,6 +347,7 @@ function AddCode_requestTokensFail() {
     Main_HideLoadDialog();
     Main_showWarningDialog(STR_OAUTH_FAIL);
     window.setTimeout(function () {
+        if (AddCode_LoginMethod !== 'legacy') return;
         Main_HideWarningDialog();
         Main_newUsercode = 0;
         Main_HideWarningDialog();
@@ -366,6 +383,7 @@ function AddCode_CheckOauthToken() {
 }
 
 function AddCode_CheckOauthTokenReady(xmlHttp) {
+    if (AddCode_LoginMethod !== 'legacy') return;
     if (xmlHttp.readyState === 4) {
         if (xmlHttp.status === 200) AddCode_CheckOauthTokenSucess(xmlHttp.responseText);
         else AddCode_CheckOauthTokenError();
@@ -385,6 +403,7 @@ function AddCode_CheckOauthTokenSucess(response) {
         Main_SaveValues();
         Main_showWarningDialog(STR_USER_CODE_OK);
         window.setTimeout(function () {
+            if (AddCode_LoginMethod !== 'legacy') return;
             Main_HideLoadDialog();
             AddCode_exit();
             Users_status = false;
@@ -397,6 +416,7 @@ function AddCode_CheckOauthTokenSucess(response) {
         AddUser_UsernameArray[Main_values.Users_AddcodePosition].refresh_token = 0;
         Main_showWarningDialog(STR_OAUTH_FAIL_USER + AddUser_UsernameArray[Main_values.Users_AddcodePosition].name);
         window.setTimeout(function () {
+            if (AddCode_LoginMethod !== 'legacy') return;
             Main_HideWarningDialog();
             Main_ShowElement('oauth_scroll');
             AddCode_inputFocus();

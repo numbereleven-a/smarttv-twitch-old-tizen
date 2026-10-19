@@ -1296,6 +1296,21 @@
                 border-image: linear-gradient(to right, #000000 20%, #d0d3d4, #000000 80%) 1 !important;
             }
 
+            #oauth_methods {
+                color: #ffffff;
+            }
+
+            .oauth_method {
+                margin: 0.6em 0;
+                padding: 0.5em;
+                border: 0.12em solid transparent;
+            }
+
+            .oauth_method_focus {
+                border-color: white;
+                background-color: #6441a4;
+            }
+
             div.settings_section {
                 font-size: 130%;
                 text-align: center;
@@ -1981,6 +1996,7 @@
         <script src="specific/PlayVod.js" defer></script>
         <script src="specific/AddUser.js" defer></script>
         <script src="specific/AddCode.js" defer></script>
+        <script src="specific/AddCodeDevice.js" defer></script>
         <script src="specific/ChatVod.js" defer></script>
         <script src="specific/ChatLive.js" defer></script>
         <script src="specific/ChatLiveControls.js" defer></script>
@@ -2194,6 +2210,19 @@
                     </div>
                     <div id="oauth_scroll" class="screen_holder hide">
                         <div id="oauth" class="input_text_box" style="margin-top: 0">
+                            <div id="oauth_methods" class="hide">
+                                <div id="oauth_methods_title"></div>
+                                <div id="oauth_method_device" class="oauth_method"></div>
+                                <div id="oauth_method_legacy" class="oauth_method"></div>
+                            </div>
+                            <div id="oauth_device" class="hide" style="text-align: center; color: white">
+                                <div id="oauth_device_instructions" style="font-size: 80%"></div>
+                                <div id="oauth_device_user" style="margin: 0.5em 0"></div>
+                                <div id="oauth_device_code" style="font-size: 220%; letter-spacing: 0.15em"></div>
+                                <div id="oauth_device_link" style="font-size: 65%; word-wrap: break-word"></div>
+                                <div id="oauth_device_status" style="margin-top: 0.5em; font-size: 75%"></div>
+                                <div id="oauth_device_time" style="font-size: 65%"></div>
+                            </div>
                             <div id="oauth_text" class="class_bold" style="color: #ffffff; font-size: 88%"></div>
                             <input id="oauth_input" class="input_class" type="text" placeholder="" />
                         </div>

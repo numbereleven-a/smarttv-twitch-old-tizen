@@ -6,9 +6,16 @@ var AddUser_UsernameArray = [];
 var AddUser_Username = null;
 var AddUser_loadingData = false;
 var AddUser_keyBoardOn = false;
+var AddUser_LoginMethod = null;
 //Variable initialization end
 
 function AddUser_init() {
+    Main_values.Main_Go = Main_addUser;
+    AddUser_LoginMethod = null;
+    AddCode_ShowMethods(true);
+}
+
+function AddUser_NameInit() {
     Main_values.Main_Go = Main_addUser;
     ScreensObj_SetTopLable(STR_USER_ADD);
     Main_HideWarningDialog();
@@ -33,10 +40,8 @@ function AddUser_handleKeyDown(event) {
             if (Main_isAboutDialogShown()) Main_HideAboutDialog();
             else if (Main_isControlsDialogShown()) Main_HideControlsDialog();
             else {
-                if (AddUser_UsernameArray.length > 0 && Main_values.Main_Go !== Main_Users) Main_values.Main_Go = Main_values.Main_Before;
-                else Main_values.Main_Go = Main_Live;
                 AddUser_exit();
-                Main_SwitchScreen();
+                AddUser_init();
             }
             break;
         case KEY_PLAY:
@@ -91,10 +96,8 @@ function AddUser_KeyboardEvent(event) {
             if (Main_isAboutDialogShown()) Main_HideAboutDialog();
             else if (Main_isControlsDialogShown()) Main_HideControlsDialog();
             else {
-                if (AddUser_UsernameArray.length > 0 && Main_values.Main_Go !== Main_Users) Main_values.Main_Go = Main_values.Main_Before;
-                else Main_values.Main_Go = Main_Live;
                 AddUser_exit();
-                Main_SwitchScreen();
+                AddUser_init();
             }
             break;
         case KEY_KEYBOARD_DELETE_ALL:
@@ -162,7 +165,7 @@ function AddUser_loadDataNoUser() {
     Main_HideLoadDialog();
     Main_showWarningDialog(STR_USER_ERROR);
     window.setTimeout(function () {
-        AddUser_init();
+        AddUser_NameInit();
     }, 1000);
     AddUser_loadingData = false;
 }
@@ -244,12 +247,19 @@ function AddUser_SaveNewUser(responseText) {
     AddUser_SaveUserArray();
     Users_status = false;
     Users_Userlastadded = AddUser_Username.login;
-    Users_ShowAutetication = true;
+    Users_ShowAutetication = AddUser_LoginMethod === null;
     AddUser_exit();
     Main_values.Main_Go = Main_Users;
     Main_HideLoadDialog();
     if (AddUser_UsernameArray.length === 1) AddUser_UpdateSidepanel();
-    Main_SwitchScreenAction();
+    if (AddUser_LoginMethod !== null) {
+        Main_values.Users_AddcodePosition = AddUser_UsernameArray.length - 1;
+        Main_SaveValues();
+        AddCode_ShowMethods();
+        if (AddUser_LoginMethod === 'device') AddCode_DeviceStart();
+        else AddCode_LegacyInit();
+        AddUser_LoginMethod = null;
+    } else Main_SwitchScreenAction();
     AddUser_loadingData = false;
 }
 

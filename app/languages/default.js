@@ -1,7 +1,7 @@
 // Bellow here are the all untranslatable string,they are a combination of strings and html code use by pats of the code
 var LINK_COLOR = '#328df5';
 var STR_SPACE_HTML = '&nbsp;';
-var STR_ABOUT_EMAIL = '';
+var STR_ABOUT_EMAIL = 'github.com/numbereleven-a/smarttv-twitch-old-tizen/issues';
 var STR_BR = '<br>';
 var STR_DOT = '<i  class="icon-circle class_bold" style="font-size: 50%; vertical-align: middle;"></i>' + '  ';
 var STR_DIV_TITLE = '<div class="about_text_title">';
@@ -16,9 +16,6 @@ var STR_ABOUT_INFO_HEADER = '';
 var STR_ABOUT_INFO_0 = '';
 var STR_CONTROLS_PLAY_0 = '';
 var STR_SPACE = '&nbsp;';
-var STR_PAYPAL;
-var STR_BITCOIN;
-var STR_BITCOIN_WALLET = '1DuhCT6L3VfBtFcS8FNfVXgBzE2rwCPx3x';
 var STR_DIV_LINK = '<div style="text-align: center; width: 100%; display: inline-block; color: #0366d6;">';
 var STR_SPAN_LINK = '<span style="color: ' + LINK_COLOR + ';">';
 
@@ -32,21 +29,6 @@ function DefaultLang() {
     STR_SWITCH_USER = STR_SWITCH_USER + STR_KEY_UP_DOWN;
     STR_CONTROLS_MAIN_3 = STR_CONTROLS_MAIN_3 + STR_GUIDE;
     STR_GOBACK = STR_GOBACK_START;
-    STR_PAYPAL =
-        '<div style="vertical-align: middle;"><img style="vertical-align: middle; display: inline-block; width: 4%;" alt="" src="https://fgl27.github.io/SmartTwitchTV/release/githubio/images/paypal.png"><div class="class_bold" style="vertical-align: middle; display: inline-block; font-size: 120%;">' +
-        STR_PAYPAL_SUMMARY +
-        STR_BR +
-        '<div style="display: inline-block; color: #0366d6;font-size: 2vh;text-align: center; font-family: Roboto;">http://tiny.cc/donatetofgl27</div></div></div>';
-    STR_BITCOIN =
-        '<div style="vertical-align: middle;"><img style="vertical-align: middle; display: inline-block; width: 4%;" alt="" src="https://fgl27.github.io/SmartTwitchTV/release/githubio/images/bitcoin.png"><div class="class_bold" style="vertical-align: middle; display: inline-block; font-size: 120%;">' +
-        STR_SPACE +
-        STR_BITCOIN_SUMMARY +
-        STR_BR +
-        STR_SPACE +
-        '<div style="display: inline-block; color: #0366d6;font-size: 2.7vh;text-align: center; font-family: Roboto;">' +
-        STR_BITCOIN_WALLET +
-        '</div></div></div>';
-
     STR_CONTROLS_PLAY_0 =
         STR_DIV_TITLE +
         STR_PLAYER +
@@ -152,7 +134,7 @@ function DefaultLang() {
         STR_CLOSE_THIS +
         '</div>';
 
-    STR_ABOUT_INFO_HEADER = STR_DIV_TITLE + STR_TWITCH_TV + '</div></div>';
+    STR_ABOUT_INFO_HEADER = STR_DIV_TITLE + STR_TWITCH_TV + '</div>';
     STR_ABOUT_INFO_0 =
         STR_DIV_MIDLE_LEFT +
         STR_BR +
@@ -173,12 +155,11 @@ function DefaultLang() {
         STR_ABOUT_EMAIL +
         '</div>' +
         STR_BR +
-        STR_PAYPAL +
-        STR_BITCOIN +
-        STR_BR +
         STR_ABOUT_INFO_4 +
         STR_BR +
         STR_ABOUT_INFO_5 +
+        STR_BR +
+        STR_ABOUT_SUPPORT_ORIGINAL +
         STR_BR +
         STR_BR +
         STR_DIV_TITLE_LEFT +
@@ -188,6 +169,12 @@ function DefaultLang() {
         STR_SPACE +
         STR_SPACE +
         STR_ABOUT_INFO_14 +
+        STR_BR +
+        STR_DOT +
+        'hls.js - HLS playback (https://github.com/video-dev/hls.js)' +
+        STR_BR +
+        STR_DOT +
+        'promise-polyfill - Promise support (https://github.com/taylorhakes/promise-polyfill)' +
         STR_BR +
         STR_DOT +
         STR_ABOUT_INFO_7 +
@@ -240,18 +227,6 @@ function DefaultLang() {
         STR_DOT +
         STR_OAUTH_EXPLAIN6;
 
-    STR_PURPLE_ADBLOCK_SUMMARY =
-        STR_PROXY_DONATE_SUMMARY +
-        STR_SPACE_HTML +
-        STR_SPACE_HTML +
-        STR_SPAN_LINK +
-        DefaultMakeLink('https://github.com/arthurbolsoni/Purple-adblock') +
-        '</span>';
-
-    STR_TTV_LOL_SUMMARY =
-        STR_PROXY_DONATE_SUMMARY + STR_SPACE_HTML + STR_SPACE_HTML + STR_SPAN_LINK + DefaultMakeLink('https://ttv.lol/donate') + '</span>';
-
-    STR_PROXY_CONTROLS_ARRAY = [STR_TTV_LOL, STR_DISABLED];
 }
 
 function DefaultMakeLink(link, prefix) {
