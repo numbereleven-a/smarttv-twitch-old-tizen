@@ -14,7 +14,7 @@ This fork fixes Twitch live playback on older Samsung Tizen TVs. Channels that e
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Release / package version | 4.1.1 / 4.1.1 |
+| Release / package version | 4.1.2 / 4.1.2 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 | Sign-in | Choose Twitch device-code sign-in or the original fgl27 method; see [Authentication](#authentication) |
@@ -34,7 +34,7 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.1.1 keeps the application identifiers used by 4.0.5 through 4.1. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
+Version 4.1.2 keeps the application identifiers used by 4.0.5 through 4.1. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 

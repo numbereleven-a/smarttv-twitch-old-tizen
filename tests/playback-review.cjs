@@ -512,6 +512,38 @@ check('Clip playback reactivates error handling after a previous player was stop
   assert.equal(errors.length,1);assert.equal(c.Play_onPlayerCounter,1);assert.equal(stats.videoPlay,plays+1);
   video.onerror();video.onerror();assert.equal(stats.terminal,1);
 });
+check('Clip requests stop on close and obsolete replies cannot replace a reopened clip or live stream',()=>{
+  const response=JSON.stringify({data:{clip:{playbackAccessToken:{signature:'example-signature',value:'example-token'},
+    videoQualities:[{quality:'720',frameRate:30,sourceURL:'https://example.invalid/clip.mp4'}]}}});
+  for(const television of [true,false]) {
+    const {c,stats}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);
+    const noop=()=>{};
+    for(const name of ['Chat_NoVod','PlayClip_loadVodOffsett','PlayVod_jumpSteps','Main_replaceClassEmoji',
+      'PlayClip_SetOpenVod','Play_IconsResetFocus','PlayClip_UpdateNext','Play_EndSet','Play_hideFollow',
+      'Main_handleKeyUp','Play_UpdateVideoStatus','PlayClip_hidePanel','Chat_Clear','Play_ClearPlayer','UserLiveFeed_Hide'])c[name]=noop;
+    c.AddUser_UserIsSet=()=>false;c.Main_values.ChannelVod_vodId=null;
+    c.Main_clientIdHeader='Client-ID';c.Main_Headers_Backup=[['Client-ID','example-client']];
+    c.ChannelClip_playUrl='example-clip';c.ChannelClip_title='Example';c.ChannelClip_createdAt='';c.ChannelClip_views=1;
+    c.Play_controls[c.Play_controlsOpenVod]={setLable:noop};c.Play_controls[c.Play_controlsChanelCont]={setLable:noop};
+    c.Main_IsNotBrowser=television;
+    c.PlayClip_Start();const first=stats.requests.at(-1);
+    first.respond(response);assert.equal(stats.videoPlay,television?1:0);assert.equal(c.Play_requests.length,0);
+    c.PlayClip_PreshutdownStream();c.PlayClip_Start();const pending=stats.requests.at(-1);
+    // Abort can synchronously dispatch readyState 4 with status 0.
+    pending.abort=function(){this.aborted=true;this.respond('',0);};
+    c.PlayClip_PreshutdownStream();
+    const plays=stats.videoPlay,requests=stats.requests.length;
+    pending.respond(response);pending.respond('',500);
+    assert.equal(stats.videoPlay,plays);assert.equal(stats.requests.length,requests);
+    assert.equal(pending.aborted,true);assert.equal(c.PlayClip_isOn,false);assert.equal(c.Play_requests.length,0);
+    c.PlayClip_Start();const current=stats.requests.at(-1);
+    pending.respond(response);assert.equal(stats.videoPlay,plays);assert.ok(c.Play_requests.includes(current));
+    current.respond(response);assert.equal(stats.videoPlay,plays+(television?1:0));assert.equal(c.Play_requests.length,0);
+    c.PlayClip_PreshutdownStream();c.Play_isOn=true;c.Play_LiveUseHls=true;c.initHLSPlayer();
+    const live=c.hls,destroyed=stats.destroy,livePlays=stats.videoPlay;
+    current.respond(response);assert.equal(c.hls,live);assert.equal(stats.destroy,destroyed);assert.equal(stats.videoPlay,livePlays);
+  }
+});
 check('A failed logo request retries the request and accepts its successful response',()=>{
   const {c,stats}=env();c.Play_isOn=true;c.Main_helix_api='https://example.invalid/';
   const requests=[];c.BasexmlHttpGet=(...args)=>requests.push(args);c.Play_partnerIcon=()=>{};c.IMG_404_LOGO='';

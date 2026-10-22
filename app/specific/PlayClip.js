@@ -48,6 +48,7 @@ var PlayClip_ExtraClipInfo =
 //Variable initialization end
 
 function PlayClip_Start() {
+    Play_InvalidateSession();
     document.getElementById('reload_button').style.display = 'none';
     document.getElementById('to_live_button').style.display = 'none';
     Main_textContent('stream_live_delay', '');
@@ -299,7 +300,9 @@ var PlayClip_postMessage =
     '{"operationName":"VideoAccessToken_Clip","variables":{"slug":"%x"},"query":"query VideoAccessToken_Clip($slug: ID!) { clip(slug: $slug) { id playbackAccessToken(params: {platform: \\"web\\", playerBackend: \\"mediaplayer\\", playerType: \\"site\\"}) { signature value } videoQualities { frameRate quality sourceURL } } }"}';
 
 function PlayClip_loadDataRequest() {
+    var session = Play_sessionId;
     var xmlHttp = new XMLHttpRequest();
+    Play_requests.push(xmlHttp);
 
     xmlHttp.open('POST', PlayClip_BaseClipUrl, true);
     xmlHttp.timeout = PlayClip_loadingDataTimeout;
@@ -309,7 +312,10 @@ function PlayClip_loadDataRequest() {
     xmlHttp.ontimeout = function () {};
 
     xmlHttp.onreadystatechange = function () {
+        if (session !== Play_sessionId || !PlayClip_isOn) return;
         if (xmlHttp.readyState === 4) {
+            var requestIndex = Play_requests.indexOf(xmlHttp);
+            if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
             if (xmlHttp.status === 200) {
                 PlayClip_QualityGenerate(xmlHttp.responseText);
             } else if (xmlHttp.status === 410) {
@@ -643,7 +649,7 @@ function PlayClip_shutdownStream() {
 }
 
 function PlayClip_PreshutdownStream() {
-    if (Main_IsNotBrowser) Play_offPlayer();
+    Play_offPlayer();
     // Clips play on the <video> element - stop and detach it too.
     if (Play_avplay_hls_player) {
         try {
