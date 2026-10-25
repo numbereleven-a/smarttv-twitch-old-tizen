@@ -352,7 +352,7 @@ function Chat_loadChatSuccess(response, id) {
 
     if (responseText.data && responseText.data.video && responseText.data.video.comments && responseText.data.video.comments.edges) {
         comments = responseText.data.video.comments.edges || [];
-        Chat_cursor = comments.length ? comments[0].cursor : '';
+        Chat_cursor = comments.length ? comments[comments.length - 1].cursor : '';
     } else {
         return;
     }
@@ -546,7 +546,7 @@ function Main_Addline(id) {
     var i,
         len = Chat_Messages.length;
 
-    if (Chat_Position < len - 1) {
+    if (Chat_Position < len) {
         i = Chat_Position;
         for (i; i < len; i++, Chat_Position++) {
             if (Chat_Messages[i].time < PlayVod_currentTime / 1000) {

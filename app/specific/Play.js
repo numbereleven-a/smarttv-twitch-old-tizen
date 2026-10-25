@@ -2859,8 +2859,10 @@ function Play_CheckEndStart(error_410) {
     ChatLive_Clear();
     window.clearInterval(Play_streamInfoTimerId);
     window.clearInterval(Play_streamCheckId);
-    if (Main_values.Play_selectedChannel_id !== '') Play_loadDataCheckHost();
-    //else Play_CheckId();
+    Play_offPlayer();
+    Play_EndSet(1);
+    Main_values.Play_isHost = false;
+    Play_PlayEndStart(1);
 }
 
 // function Play_CheckId() {

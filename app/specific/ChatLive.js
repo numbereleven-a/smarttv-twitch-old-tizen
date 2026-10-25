@@ -829,167 +829,171 @@ function ChatLive_loadChatRequest(chat_number, id) {
     ChatLive_socket[chat_number].onmessage = function (data) {
         if (!data.data) return;
 
-        var message = window.parseIRC(data.data.trim());
+        var lines = data.data.split('\r\n');
+        for (var line = 0; line < lines.length; line++) {
+            if (!lines[line]) continue;
+            var message = window.parseIRC(lines[line]);
+            if (!message || !message.command) continue;
 
-        if (!message.command) return;
+            // if (message.command !== "PRIVMSG") {
+            //     Main_Log(message.command + ' Main');
+            //     Main_Log(JSON.stringify(message));
+            // }
 
-        // if (message.command !== "PRIVMSG") {
-        //     Main_Log(message.command + ' Main');
-        //     Main_Log(JSON.stringify(message));
-        // }
-
-        switch (message.command) {
-            case 'PRIVMSG':
-                //Main_Log(JSON.stringify(message));
-                ChatLive_loadChatSuccess(message, chat_number);
-                break;
-            case 'PING':
-                //Main_Log('ChatLive_socket[chat_number] ' + chat_number + ' PING');
-                //Main_Log(JSON.stringify(message));
-                ChatLive_socket[chat_number].send('PONG ' + message.params[0]);
-                break;
-            case '001':
-                if (useToken[chat_number] && Main_A_includes_B(message.params[1], AddUser_UsernameArray[0].name.toLowerCase())) {
-                    ChatLive_SetCheck(chat_number, id);
-                    ChatLive_socket[chat_number].send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-                }
-                break;
-            case 'CAP':
-                if (useToken[chat_number]) {
-                    //Delay the joing so the cap get fully accepted
-                    ChatLive_JoinID[chat_number] = Main_setTimeout(
-                        function () {
-                            ChatLive_socket[chat_number].send('JOIN #' + ChatLive_selectedChannel[chat_number]);
-                        },
-                        500,
-                        ChatLive_JoinID[chat_number]
-                    );
-                }
-                break;
-            case 'JOIN':
-                //Main_Log("JOIN");
-                if (!ChatLive_loaded[chat_number]) {
-                    ChatLive_loaded[chat_number] = true;
-
-                    ChatLive_LineAdd({
-                        chat_number: chat_number,
-                        message: ChatLive_LineAddSimple(
-                            STR_CHAT_CONNECTED + ' as ' + (useToken[chat_number] ? AddUser_UsernameArray[0].display_name : STR_ANONYMOUS_USER)
-                        )
-                    });
-
-                    if (Play_ChatDelayPosition) {
-                        var stringSec = '';
-
-                        if (Play_controls[Play_controlsChatDelay].defaultValue > 2) stringSec = STR_SECONDS;
-                        else if (Play_controls[Play_controlsChatDelay].defaultValue > 1) stringSec = STR_SECOND;
+            switch (message.command) {
+                case 'PRIVMSG':
+                    //Main_Log(JSON.stringify(message));
+                    ChatLive_loadChatSuccess(message, chat_number);
+                    break;
+                case 'PING':
+                    //Main_Log('ChatLive_socket[chat_number] ' + chat_number + ' PING');
+                    //Main_Log(JSON.stringify(message));
+                    ChatLive_socket[chat_number].send('PONG ' + message.params[0]);
+                    break;
+                case '001':
+                    if (useToken[chat_number] && message.params[0] === AddUser_UsernameArray[0].name.toLowerCase()) {
+                        ChatLive_SetCheck(chat_number, id);
+                        ChatLive_socket[chat_number].send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+                    }
+                    break;
+                case 'CAP':
+                    if (useToken[chat_number]) {
+                        //Delay the joing so the cap get fully accepted
+                        ChatLive_JoinID[chat_number] = Main_setTimeout(
+                            function () {
+                                ChatLive_socket[chat_number].send('JOIN #' + ChatLive_selectedChannel[chat_number]);
+                            },
+                            500,
+                            ChatLive_JoinID[chat_number]
+                        );
+                    }
+                    break;
+                case 'JOIN':
+                    //Main_Log("JOIN");
+                    if (!ChatLive_loaded[chat_number]) {
+                        ChatLive_loaded[chat_number] = true;
 
                         ChatLive_LineAdd({
                             chat_number: chat_number,
                             message: ChatLive_LineAddSimple(
-                                STR_CHAT_DELAY +
-                                    ' ' +
-                                    Play_controls[Play_controlsChatDelay].values[Play_controls[Play_controlsChatDelay].defaultValue] +
-                                    stringSec
+                                STR_CHAT_CONNECTED + ' as ' + (useToken[chat_number] ? AddUser_UsernameArray[0].display_name : STR_ANONYMOUS_USER)
                             )
                         });
+
+                        if (Play_ChatDelayPosition) {
+                            var stringSec = '';
+
+                            if (Play_controls[Play_controlsChatDelay].defaultValue > 2) stringSec = STR_SECONDS;
+                            else if (Play_controls[Play_controlsChatDelay].defaultValue > 1) stringSec = STR_SECOND;
+
+                            ChatLive_LineAdd({
+                                chat_number: chat_number,
+                                message: ChatLive_LineAddSimple(
+                                    STR_CHAT_DELAY +
+                                        ' ' +
+                                        Play_controls[Play_controlsChatDelay].values[Play_controls[Play_controlsChatDelay].defaultValue] +
+                                        stringSec
+                                )
+                            });
+                        }
+
+                        //On old implementation of webview or malfunction implementations, there is the need to send a a "heartbeat"
+                        //from time to time, to prevent the connection from be closed, only one device need this Amazon firestick 4k Model AFTMM
+                        //On that device the onclose is automatic call after 60 seconds of inactivity
+                        ChatLive_PingId[chat_number] = Main_setInterval(
+                            function () {
+                                if (ChatLive_socket[chat_number] && ChatLive_socket[chat_number].readyState === 1)
+                                    ChatLive_socket[chat_number].send('PONG tmi.twitch.tv');
+                            },
+                            30 * 1000, //30
+                            ChatLive_PingId[chat_number]
+                        );
                     }
+                    ChatLive_CheckRoomState(message, chat_number, true);
 
-                    //On old implementation of webview or malfunction implementations, there is the need to send a a "heartbeat"
-                    //from time to time, to prevent the connection from be closed, only one device need this Amazon firestick 4k Model AFTMM
-                    //On that device the onclose is automatic call after 60 seconds of inactivity
-                    ChatLive_PingId[chat_number] = Main_setInterval(
-                        function () {
-                            if (ChatLive_socket[chat_number] && ChatLive_socket[chat_number].readyState === 1)
-                                ChatLive_socket[chat_number].send('PONG tmi.twitch.tv');
-                        },
-                        30 * 1000, //30
-                        ChatLive_PingId[chat_number]
-                    );
-                }
-                ChatLive_CheckRoomState(message, chat_number, true);
+                    break;
+                case 'USERNOTICE':
+                    ChatLive_CheckIfSub(message, chat_number);
+                    break;
+                case 'USERSTATE':
+                    //Main_Log('USERSTATE chat ' + chat_number);
+                    //Main_Log(message);
+                    ChatLive_CheckRoomState(message, chat_number);
+                    //ROOMSTATE
+                    //{"raw":"@badge-info=;badges=;color=;display-name=fglfgl27;emote-sets=0,300374282;mod=0;subscriber=0;user-type= :tmi.twitch.tv USERSTATE #kimchi\r\n@emote-only=0;followers-only=-1;r9k=0;rituals=0;room-id=54281335;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #kimchi\r\n:fglfgl27.tmi.twitch.tv 353 fglfgl27 = #kimchi :fglfgl27\r\n:fglfgl27.tmi.twitch.tv 366 fglfgl27 #kimchi :End of /NAMES list","tags":{"badge-info":true,"badges":true,"color":true,"display-name":"fglfgl27","emote-sets":"0,300374282","mod":"0","subscriber":"0","user-type":true},"prefix":"tmi.twitch.tv","command":"USERSTATE","params":["#kimchi\r\n@emote-only=0;followers-only=-1;r9k=0;rituals=0;room-id=54281335;slow=0;subs-only=0","tmi.twitch.tv ROOMSTATE #kimchi\r\n:fglfgl27.tmi.twitch.tv 353 fglfgl27 = #kimchi :fglfgl27\r\n:fglfgl27.tmi.twitch.tv 366 fglfgl27 #kimchi :End of /NAMES list"]}
 
-                break;
-            case 'USERNOTICE':
-                ChatLive_CheckIfSub(message, chat_number);
-                break;
-            case 'USERSTATE':
-                //Main_Log('USERSTATE chat ' + chat_number);
-                //Main_Log(message);
-                ChatLive_CheckRoomState(message, chat_number);
-                //ROOMSTATE
-                //{"raw":"@badge-info=;badges=;color=;display-name=fglfgl27;emote-sets=0,300374282;mod=0;subscriber=0;user-type= :tmi.twitch.tv USERSTATE #kimchi\r\n@emote-only=0;followers-only=-1;r9k=0;rituals=0;room-id=54281335;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #kimchi\r\n:fglfgl27.tmi.twitch.tv 353 fglfgl27 = #kimchi :fglfgl27\r\n:fglfgl27.tmi.twitch.tv 366 fglfgl27 #kimchi :End of /NAMES list","tags":{"badge-info":true,"badges":true,"color":true,"display-name":"fglfgl27","emote-sets":"0,300374282","mod":"0","subscriber":"0","user-type":true},"prefix":"tmi.twitch.tv","command":"USERSTATE","params":["#kimchi\r\n@emote-only=0;followers-only=-1;r9k=0;rituals=0;room-id=54281335;slow=0;subs-only=0","tmi.twitch.tv ROOMSTATE #kimchi\r\n:fglfgl27.tmi.twitch.tv 353 fglfgl27 = #kimchi :fglfgl27\r\n:fglfgl27.tmi.twitch.tv 366 fglfgl27 #kimchi :End of /NAMES list"]}
-
-                // tags:
-                // badge-info: true
-                // badges: true
-                // color: true
-                // display-name: "testtwitch27"
-                // emote-sets: "0"
-                // mod: "0"
-                // subscriber: "0"
-                // user-type: true
-                break;
-            case 'NOTICE':
-                if (useToken[chat_number]) {
-                    ChatLive_UserNoticeCheck(message, chat_number, id);
-                }
-                // command: "NOTICE"
-                // params: Array(2)
-                // 0: "#channel"
-                // 1: "You are permanently banned from talking in buddha."
-                // length: 2
-                // __proto__: Array(0)
-                // prefix: "tmi.twitch.tv"
-                // raw: "@msg-id=msg_banned :tmi.twitch.tv NOTICE #channel :You are permanently banned from talking in channel."
-                // tags:
-                // msg-id: "msg_banned"
-                break;
-            case 'ROOMSTATE':
-                ChatLive_UpdateRoomState(message, chat_number);
-                // command: "ROOMSTATE"
-                // params: Array(6)
-                // 0: "#sayeedblack
-                // ↵:testtwitch27.tmi.twitch.tv"
-                // 1: "353"
-                // 2: "testtwitch27"
-                // 3: "="
-                // 4: "#sayeedblack"
-                // 5: "testtwitch27
-                // ↵:testtwitch27.tmi.twitch.tv 366 testtwitch27 #sayeedblack :End of /NAMES list"
-                // length: 6
-                // __proto__: Array(0)
-                // prefix: "tmi.twitch.tv"
-                // raw: "@emote-only=0;followers-only=-1;r9k=0;rituals=1;room-id=83084666;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #sayeedblack
-                // ↵:testtwitch27.tmi.twitch.tv 353 testtwitch27 = #sayeedblack :testtwitch27
-                // ↵:testtwitch27.tmi.twitch.tv 366 testtwitch27 #sayeedblack :End of /NAMES list"
-                // tags:
-                // emote-only: "0"
-                // followers-only: "-1"
-                // r9k: "0"
-                // rituals: "1"
-                // room-id: "83084666"
-                // slow: "0"
-                // subs-only: "0"
-                // __proto__: Object
-                // __proto__: Object
-                break;
-            case 'PART':
-                if (ChatLive_socket[chat_number]) {
-                    ChatLive_reset(chat_number);
-                    ChatLive_socket[chat_number].close(1000);
-                }
-                break;
-            case 'CLEARCHAT':
-                //Main_Log(JSON.stringify(message));
-                ChatLive_CleanUser(chat_number, message);
-                break;
-            case 'CLEARMSG':
-                //Main_Log(JSON.stringify(message));
-                ChatLive_CleanMessage(message);
-                break;
-            default:
-                break;
+                    // tags:
+                    // badge-info: true
+                    // badges: true
+                    // color: true
+                    // display-name: "testtwitch27"
+                    // emote-sets: "0"
+                    // mod: "0"
+                    // subscriber: "0"
+                    // user-type: true
+                    break;
+                case 'NOTICE':
+                    if (useToken[chat_number]) {
+                        ChatLive_UserNoticeCheck(message, chat_number, id);
+                    }
+                    // command: "NOTICE"
+                    // params: Array(2)
+                    // 0: "#channel"
+                    // 1: "You are permanently banned from talking in buddha."
+                    // length: 2
+                    // __proto__: Array(0)
+                    // prefix: "tmi.twitch.tv"
+                    // raw: "@msg-id=msg_banned :tmi.twitch.tv NOTICE #channel :You are permanently banned from talking in channel."
+                    // tags:
+                    // msg-id: "msg_banned"
+                    break;
+                case 'ROOMSTATE':
+                    Main_clearTimeout(ChatLive_JoinID[chat_number]);
+                    ChatLive_UpdateRoomState(message, chat_number);
+                    // command: "ROOMSTATE"
+                    // params: Array(6)
+                    // 0: "#sayeedblack
+                    // ↵:testtwitch27.tmi.twitch.tv"
+                    // 1: "353"
+                    // 2: "testtwitch27"
+                    // 3: "="
+                    // 4: "#sayeedblack"
+                    // 5: "testtwitch27
+                    // ↵:testtwitch27.tmi.twitch.tv 366 testtwitch27 #sayeedblack :End of /NAMES list"
+                    // length: 6
+                    // __proto__: Array(0)
+                    // prefix: "tmi.twitch.tv"
+                    // raw: "@emote-only=0;followers-only=-1;r9k=0;rituals=1;room-id=83084666;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #sayeedblack
+                    // ↵:testtwitch27.tmi.twitch.tv 353 testtwitch27 = #sayeedblack :testtwitch27
+                    // ↵:testtwitch27.tmi.twitch.tv 366 testtwitch27 #sayeedblack :End of /NAMES list"
+                    // tags:
+                    // emote-only: "0"
+                    // followers-only: "-1"
+                    // r9k: "0"
+                    // rituals: "1"
+                    // room-id: "83084666"
+                    // slow: "0"
+                    // subs-only: "0"
+                    // __proto__: Object
+                    // __proto__: Object
+                    break;
+                case 'PART':
+                    if (ChatLive_socket[chat_number]) {
+                        ChatLive_reset(chat_number);
+                        ChatLive_socket[chat_number].close(1000);
+                    }
+                    break;
+                case 'CLEARCHAT':
+                    //Main_Log(JSON.stringify(message));
+                    ChatLive_CleanUser(chat_number, message);
+                    break;
+                case 'CLEARMSG':
+                    //Main_Log(JSON.stringify(message));
+                    ChatLive_CleanMessage(message);
+                    break;
+                default:
+                    break;
+            }
         }
     };
 
@@ -1082,7 +1086,7 @@ function ChatLive_CheckRoomState(message, chat_number, retry) {
             return;
         }
 
-        if (retry) {
+        if (retry && !ChatLive_RoomState[chat_number]) {
             //Don't retry for USERSTATE only on join
             //try a join again so the ROOMSTATE get send
             ChatLive_JoinID[chat_number] = Main_setTimeout(
@@ -1609,7 +1613,9 @@ function ChatLive_LineAdd(messageObj) {
             Chat_Clean(messageObj.chat_number);
         }
     } else {
-        ChatLive_Messages[messageObj.chat_number].push(messageObj);
+        var queue = ChatLive_Messages[messageObj.chat_number];
+        queue.push(messageObj);
+        if (queue.length > Chat_CleanMax) queue.shift();
     }
 }
 

@@ -235,9 +235,23 @@ function AddCode_AppTokenSucess(responseText, callbackFunc) {
     Main_SaveValues();
 }
 
+function AddCode_UserPosition(user) {
+    var position = AddUser_UserFindpos(user.name);
+    return position !== -1 && AddUser_UsernameArray[position].id === user.id ? position : -1;
+}
+
 function AddCode_refreshTokens(position, tryes, callbackFunc, callbackFuncNOK) {
     if (!AddUser_UsernameArray[position] || !AddUser_UsernameArray[position].access_token) return;
 
+    var user = AddUser_UsernameArray[position];
+    var refreshToken = user.refresh_token;
+    var mainUser = AddUser_UsernameArray[0];
+    var onSuccess = callbackFunc ? function () {
+        if (AddCode_UserPosition(mainUser) === 0) callbackFunc();
+    } : null;
+    var onFailure = callbackFuncNOK ? function () {
+        if (AddCode_UserPosition(mainUser) === 0) callbackFuncNOK();
+    } : null;
     var xmlHttp = new XMLHttpRequest();
 
     var url =
@@ -247,7 +261,7 @@ function AddCode_refreshTokens(position, tryes, callbackFunc, callbackFuncNOK) {
         '&client_secret=' +
         encodeURIComponent(AddCode_client_token) +
         '&refresh_token=' +
-        encodeURIComponent(AddUser_UsernameArray[position].refresh_token) +
+        encodeURIComponent(refreshToken) +
         '&redirect_uri=' +
         AddCode_redirect_uri;
 
@@ -257,19 +271,21 @@ function AddCode_refreshTokens(position, tryes, callbackFunc, callbackFuncNOK) {
 
     xmlHttp.onreadystatechange = function () {
         if (xmlHttp.readyState === 4) {
+            position = AddCode_UserPosition(user);
+            if (position === -1 || AddUser_UsernameArray[position].refresh_token !== refreshToken) return;
             if (xmlHttp.status === 200) {
-                AddCode_refreshTokensSucess(xmlHttp.responseText, position, callbackFunc);
+                AddCode_refreshTokensSucess(xmlHttp.responseText, position, onSuccess);
             } else {
                 try {
                     var response = JSON.parse(xmlHttp.responseText);
                     if (response.message) {
                         if (Main_A_includes_B(response.message, 'Invalid refresh token')) {
                             AddCode_requestTokensFailRunning(position);
-                            if (callbackFuncNOK) callbackFuncNOK();
-                        } else AddCode_refreshTokensError(position, tryes, callbackFunc, callbackFuncNOK);
-                    } else AddCode_refreshTokensError(position, tryes, callbackFunc, callbackFuncNOK);
+                            if (onFailure) onFailure();
+                        } else AddCode_refreshTokensError(position, tryes, onSuccess, onFailure);
+                    } else AddCode_refreshTokensError(position, tryes, onSuccess, onFailure);
                 } catch (e) {
-                    AddCode_refreshTokensError(position, tryes, callbackFunc, callbackFuncNOK);
+                    AddCode_refreshTokensError(position, tryes, onSuccess, onFailure);
                 }
             }
         }
@@ -286,6 +302,7 @@ function AddCode_refreshTokensError(position, tryes, callbackFuncOK, callbackFun
 
 function AddCode_refreshTokensSucess(responseText, position, callbackFunc) {
     var response = JSON.parse(responseText);
+    var user = AddUser_UsernameArray[position];
     if (AddCode_TokensCheckScope(response.scope)) {
         AddUser_UsernameArray[position].access_token = response.access_token;
         AddUser_UsernameArray[position].refresh_token = response.refresh_token;
@@ -293,7 +310,7 @@ function AddCode_refreshTokensSucess(responseText, position, callbackFunc) {
 
         AddUser_SaveUserArray();
 
-        AddCode_Refreshtimeout(position);
+        AddCode_Refreshtimeout(AddCode_UserPosition(user));
     } else AddCode_requestTokensFailRunning(position);
 
     if (callbackFunc) callbackFunc();
@@ -459,11 +476,13 @@ function AddCode_CheckTokenSuccess(responseText, position) {
 }
 
 function AddCode_Refreshtimeout(position) {
+    var user = AddUser_UsernameArray[position];
     window.clearTimeout(AddUser_UsernameArray[position].timeout_id);
 
     if (AddUser_UsernameArray[position].access_token) {
         AddUser_UsernameArray[position].timeout_id = window.setTimeout(function () {
-            AddCode_refreshTokens(position, 0, null, null);
+            var current = AddCode_UserPosition(user);
+            if (current !== -1) AddCode_refreshTokens(current, 0, null, null);
         }, (parseInt(AddUser_UsernameArray[position].expires_in) - 60) * 1000);
     }
 }
@@ -804,6 +823,8 @@ function AddCode_BasexmlHttpGetBack(theUrl, type, HeaderQuantity, access_token, 
 function AddCode_BasexmlHttpGetValidate(callbackready, position, tryes) {
     var theUrl = 'https://id.twitch.tv/oauth2/validate';
 
+    var user = AddUser_UsernameArray[position];
+    var accessToken = user.access_token;
     var xmlHttp = new XMLHttpRequest();
 
     xmlHttp.open('GET', theUrl, true);
@@ -813,7 +834,8 @@ function AddCode_BasexmlHttpGetValidate(callbackready, position, tryes) {
     xmlHttp.ontimeout = function () {};
 
     xmlHttp.onreadystatechange = function () {
-        callbackready(xmlHttp, position, tryes);
+        var current = AddCode_UserPosition(user);
+        if (current !== -1 && AddUser_UsernameArray[current].access_token === accessToken) callbackready(xmlHttp, current, tryes);
     };
 
     xmlHttp.send(null);

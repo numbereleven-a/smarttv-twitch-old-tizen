@@ -733,6 +733,123 @@ check('Device login rejects a different account, application or missing scopes w
     assert.ok(c.document.getElementById('oauth_device_status').textContent.includes(c.STR_LOGIN_RETRY));
   }
 });
+check('An offline restored LIVE channel finishes loading, offers Reload and clears automatic restore',()=>{
+  const {c,stats}=env();const noop=()=>{};
+  // Restore the real functions that env replaces with terminal counters.
+  const originals={};vm.createContext(originals);vm.runInContext(read('app/specific/Play.js'),originals);
+  for(const name of ['Play_CheckEndStart','Play_PlayEndStart'])c[name]=originals[name];
+  // Recompile in the same context so globals belong to this player.
+  for(const name of ['Play_CheckEndStart','Play_PlayEndStart'])vm.runInContext(name+' = '+originals[name].toString(),c);
+  for(const name of ['ChatLive_Clear','Play_EndSet','Play_PrepareshowEndDialog','Play_EndText','UserLiveFeed_SetHoldUp',
+    'UserLiveFeed_clearHideFeed','UserLiveFeed_ShowFeed','Main_SaveValues'])c[name]=noop;
+  c.Main_IsNotBrowser=false;c.Play_isOn=true;c.Play_isLive=true;c.Play_selectedChannel_id_Old=null;
+  c.Play_EndDialogEnter=0;c.Main_values.Play_WasPlaying=1;c.Play_state=c.Play_STATE_LOADING_PLAYLIST;c.Play_Headers=[];
+  c.Main_values.Play_selectedChannel_id='';c.Play_tokenResponse={value:'example-token',signature:'example-signature'};
+  c.Play_loadDataRequest();stats.requests.at(-1).respond('',404);
+  assert.equal(c.Play_state,-1);assert.equal(c.Main_values.Play_WasPlaying,0);
+  assert.equal(c.document.getElementById('dialog_end_stream').classList.contains('hide'),false);
+  assert.equal(c.Play_requests.length,0);assert.equal(stats.prepare,0);
+});
+check('Native VOD waits for seek, bounds preparation and rejects late callbacks after fallback',()=>{
+  const {c,stats}=env();const order=[];let seekDone,ready;
+  c.PlayVod_isOn=true;c.PlayVod_useHls=false;c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';
+  c.Main_values.vodOffset=120;c.ChannelVod_DurationSeconds=600;c.Chat_Init=()=>{};
+  c.Play_StopAndCloseAndPlay=()=>{};c.Play_avplay.seekTo=(offset,ok)=>{order.push('seek');seekDone=ok;};
+  c.Play_avplay.setBufferingParam=()=>order.push('buffer');c.Play_avplay.prepareAsync=ok=>{order.push('prepare');ready=ok;};
+  c.PlayVod_onPlayer();assert.deepEqual(order,['seek']);seekDone();
+  assert.deepEqual(order,['seek','buffer','buffer','prepare']);assert.equal(stats.timerDelays[0],15000);
+  stats.timers[0]();assert.equal(c.PlayVod_useHls,true);const plays=stats.nativePlay;
+  ready();assert.equal(stats.nativePlay,plays);
+  const other=env();other.c.Play_HlsSupported=false;other.c.PlayVod_useHls=false;
+  other.c.PlayVod_UseHlsFallback('synthetic');assert.equal(other.c.PlayVod_useHls,false);assert.equal(other.stats.terminal,1);
+  const normal=env();normal.c.PlayVod_isOn=true;normal.c.PlayVod_useHls=false;
+  normal.c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';normal.c.ChannelVod_DurationSeconds=600;
+  normal.c.Play_avplay.getDuration=()=>600000;
+  normal.c.PlayVod_onPlayer();normal.stats.pendingReady[0]();assert.equal(normal.stats.nativePlay,1);
+  normal.stats.timers[0]();assert.equal(normal.c.PlayVod_useHls,false);
+});
+check('Refresh follows user identity across main-account changes, removal and timer callbacks',()=>{
+  const {c,stats}=loginEnv();const noop=()=>{};
+  c.AddUser_UsernameArray[0].id='example-a';
+  c.AddUser_UsernameArray.push({id:'example-b',name:'second',display_name:'Second',access_token:'example-second-access',refresh_token:'example-second-refresh',expires_in:3600});
+  c.AddUser_UpdateSidepanel=noop;let callback=0;
+  c.AddCode_Refreshtimeout(0);const timer=stats.timers.at(-1);
+  c.AddCode_refreshTokens(0,0,()=>callback++,null);const request=stats.requests.at(-1);
+  c.AddUser_UserMakeOne(1);
+  request.respond(JSON.stringify({access_token:'example-renewed',refresh_token:'example-renewed-refresh',expires_in:3600,scope:Array.from(c.AddCode_Scopes)}));
+  assert.equal(c.AddUser_UsernameArray[0].access_token,'example-second-access');
+  assert.equal(c.AddUser_UsernameArray[1].access_token,'example-renewed');assert.equal(callback,0);
+  timer();const refresh=stats.requests.at(-1);assert.ok(refresh.url.includes('example-renewed-refresh'));
+  c.AddUser_UsernameArray.splice(1,1);const count=stats.requests.length;
+  refresh.respond('',500);assert.equal(stats.requests.length,count);timer();assert.equal(stats.requests.length,count);
+});
+check('Paused chat retains only the recent window and resumes with bounded rendering',()=>{
+  const {c}=env();vm.runInContext(read('app/specific/ChatLive.js'),c);
+  c.Chat_CleanMax=60;c.ChatLive_Messages=[[],[]];c.ChatLive_Playing=false;
+  for(let i=0;i<20000;i++)c.ChatLive_LineAdd({chat_number:0,message:String(i)});
+  assert.equal(c.ChatLive_Messages[0].length,60);assert.equal(c.ChatLive_Messages[0][0].message,'19940');
+  const shown=[];c.ChatLive_ElemntAdd=m=>shown.push(m.message);c.ChatLive_LineAddCounter=[0,0];c.Chat_Clean=()=>{};
+  c.ChatLive_Playing=true;c.ChatLive_MessagesRunAfterPause();assert.equal(shown.length,60);assert.equal(shown.at(-1),'19999');
+  assert.equal(c.ChatLive_Messages[0].length,0);
+});
+check('IRC WebSocket batches parse every message and answer PING, including malformed lines',()=>{
+  const {c}=env();vm.runInContext(read('app/thirdparty/irc-message.js'),c);vm.runInContext(read('app/specific/ChatLive.js'),c);
+  const messages=[],sent=[];c.WebSocket=function(){this.send=s=>sent.push(s);};c.ChatLive_SetCheck=()=>{};
+  c.Chat_Id[0]=1;c.ChatLive_loadChatSuccess=m=>messages.push(m.params.at(-1));c.ChatLive_loadChatRequest(0,1);
+  c.ChatLive_socket[0].onmessage({data:':alice!alice@a PRIVMSG #example :first\r\n:bob!bob@b PRIVMSG #example :second\r\nPING :tmi.twitch.tv\r\n'});
+  assert.deepEqual(messages,['first','second']);assert.equal(sent.length,1);assert.ok(sent[0].startsWith('PONG '));
+  const parse=c.parseIRC;c.parseIRC=line=>line==='invalid'?null:parse(line);
+  c.ChatLive_socket[0].onmessage({data:'invalid\r\nPING :tmi.twitch.tv\r\n'});assert.equal(sent.length,2);
+});
+check('Authenticated chat completes welcome, capabilities and JOIN with separate IRC lines',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/thirdparty/irc-message.js'),c);vm.runInContext(read('app/specific/ChatLive.js'),c);
+  const sent=[],pending=new Map();let timer=0;
+  c.WebSocket=function(){this.send=line=>sent.push(line);this.readyState=1;};
+  c.Main_setTimeout=(fn,delay,old)=>{pending.delete(old);pending.set(++timer,{fn,delay});return timer;};
+  c.Main_clearTimeout=id=>pending.delete(id);c.Main_setInterval=()=>1;
+  c.ChatLiveControls_RefreshRoomState=()=>{};c.ChatLive_LineAdd=()=>{};c.Play_ChatDelayPosition=0;
+  c.Chat_Id[0]=1;c.useToken[0]=true;c.ChatLive_selectedChannel[0]='example_channel';
+  c.AddUser_UsernameArray=[{name:'example_user',display_name:'Example',access_token:'example-access'}];
+  c.ChatLive_loadChatRequest(0,1);const socket=c.ChatLive_socket[0];socket.onopen();
+  assert.ok(sent.includes('NICK example_user'));
+  socket.onmessage({data:':tmi.twitch.tv 001 example_user :Welcome, GLHF!\r\n:tmi.twitch.tv 002 example_user :Your host is tmi.twitch.tv\r\n'});
+  assert.ok(sent.includes('CAP REQ :twitch.tv/tags twitch.tv/commands'));
+  socket.onmessage({data:':tmi.twitch.tv CAP * ACK :twitch.tv/tags twitch.tv/commands\r\n'});
+  const join=pending.get(c.ChatLive_JoinID[0]);pending.delete(c.ChatLive_JoinID[0]);join.fn();
+  assert.ok(sent.includes('JOIN #example_channel'));
+  socket.onmessage({data:':example_user!example_user@host JOIN #example_channel\r\n@emote-only=0;followers-only=-1;r9k=0;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #example_channel\r\n'});
+  assert.equal(c.ChatLive_loaded[0],true);assert.equal(c.ChatLive_RoomState[0].slow,0);
+  assert.equal(pending.has(c.ChatLive_JoinID[0]),false);
+  for(const entry of pending.values())entry.fn();assert.equal(c.ChatLive_loaded[0],true);
+});
+check('HLS VOD consumes its restored seek and periodically saves the current position',()=>{
+  const {c}=env();const saved=[];c.Main_SaveValues=()=>saved.push(c.Main_values.vodOffset);
+  c.PlayVod_isOn=true;c.PlayVod_useHls=true;c.PlayClip_HasVOD=false;c.Main_values.vodOffset=120;
+  c.PlayVod_BindHlsListeners();c.Play_avplay_hls_player.onloadedmetadata();assert.equal(c.Play_avplay_hls_player.currentTime,120);
+  c.PlayVod_currentTime=300000;c.PlayVod_SaveOffset();c.PlayVod_currentTime=360000;c.PlayVod_SaveOffset();
+  assert.deepEqual(saved,[300,360]);assert.equal(c.Main_values.vodOffset,0);
+});
+check('Adding an alphabetically earlier account starts authentication for that account after sorting',()=>{
+  const {c}=loginEnv();const noop=()=>{};
+  c.AddUser_UsernameArray=[{name:'main',display_name:'Main'},{name:'zulu',display_name:'Zulu'}];
+  c.AddUser_exit=noop;c.AddCode_DeviceStart=noop;c.AddUser_LoginMethod='device';
+  c.AddUser_SaveNewUser(JSON.stringify({data:[{login:'alice',display_name:'Alice',id:'example-a'}]}));
+  assert.equal(c.AddUser_UsernameArray[c.Main_values.Users_AddcodePosition].name,'alice');
+});
+check('VOD chat renders the final waiting message before ending the page',()=>{
+  const {c}=env();vm.runInContext(read('app/specific/ChatVod.js'),c);const shown=[];
+  c.ChatLive_ElemntAdd=m=>shown.push(m.message);c.Main_clearInterval=()=>{};
+  c.Chat_Messages=[{time:0,message:'first'},{time:10,message:'last'}];c.Chat_cursor='';
+  c.PlayVod_currentTime=5000;c.Main_Addline(1);assert.deepEqual(shown,['first']);
+  c.PlayVod_currentTime=15000;c.Main_Addline(1);assert.deepEqual(shown,['first','last']);
+  c.Main_Addline(1);assert.equal(c.Chat_hasEnded,true);
+  c.Chat_hasEnded=false;c.Chat_Id=[1];c.Chat_cursor='previous';c.Chat_MessagesNext=[];
+  c.Chat_loadChatSuccess(JSON.stringify({data:{video:{comments:{edges:[
+    {cursor:'first-cursor',node:{id:'a',commenter:null}},
+    {cursor:'last-cursor',node:{id:'b',commenter:null}}
+  ]}}}}),1);
+  assert.equal(c.Chat_cursor,'last-cursor');
+});
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),
   hlsVersion:realHls.version,total:results.length,passed:results.length-failed,failed,results};

@@ -695,6 +695,7 @@ function PlayVod_BindHlsListeners() {
             try {
                 Play_avplay_hls_player.currentTime = Math.max(seekTarget, 0);
                 PlayVod_hlsSeekApplied = true;
+                Main_values.vodOffset = 0;
                 PlayVod_currentTime = seekTarget * 1000;
                 PlayVod_ProgresBarrUpdate(seekTarget, ChannelVod_DurationSeconds, true);
                 Chat_offset = seekTarget;
@@ -744,6 +745,11 @@ function PlayVod_BindHlsListeners() {
 
 function PlayVod_UseHlsFallback(reason) {
     if (PlayVod_useHls) return;
+    Play_nativeAttempt++;
+    if (!Play_HlsSupported) {
+        Play_PannelEndStart(2);
+        return;
+    }
     PlayVod_useHls = true;
     PlayVod_switchingToHls = true;
     console.log('PlayVod fallback to HLS:', reason);
@@ -778,57 +784,86 @@ function PlayVod_onPlayer() {
 
         if (Main_values.vodOffset > ChannelVod_DurationSeconds) Main_values.vodOffset = 0;
 
-        if (Main_values.vodOffset && !PlayVod_replay) {
+        var seekOffset = !PlayVod_replay ? Main_values.vodOffset : 0;
+        if (seekOffset) {
             Chat_offset = Main_values.vodOffset;
             Chat_Init();
-            Play_avplay.seekTo(Main_values.vodOffset * 1000);
         }
         PlayVod_replay = false;
 
-        Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', PlayVod_Buffer);
-        Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', PlayVod_Buffer);
-        Play_SetFullScreen(Play_isFullScreen);
-        Play_avplay.setListener(PlayVod_listener);
+        var preparing = true;
+        Play_RetryLater(function () {
+            if (!preparing || attempt !== Play_nativeAttempt || !PlayVod_isOn || PlayVod_useHls) return;
+            preparing = false;
+            PlayVod_UseHlsFallback('prepare timeout');
+        }, Play_NativePrepareTimeout * 1000);
+        var prepare = function () {
+            if (!preparing || attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
+            try {
+                Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', PlayVod_Buffer);
+                Play_avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', PlayVod_Buffer);
+                Play_SetFullScreen(Play_isFullScreen);
+                Play_avplay.setListener(PlayVod_listener);
 
-        Play_avplay.prepareAsync(
-            function () {
-                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
-                //successCallback
-                console.log('Play_avplay.prepareAsync Vod OK:', 'date: ' + new Date());
-                Play_avplay.play();
-                ChannelVod_DurationSeconds = Play_avplay.getDuration() / 1000;
-                Main_textContent('progress_bar_duration', Play_timeS(ChannelVod_DurationSeconds));
-                if (Play_ChatEnable && !Play_isChatShown()) Play_showChat();
+                Play_avplay.prepareAsync(
+                    function () {
+                        if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
+                        preparing = false;
+                        //successCallback
+                        console.log('Play_avplay.prepareAsync Vod OK:', 'date: ' + new Date());
+                        Play_avplay.play();
+                        ChannelVod_DurationSeconds = Play_avplay.getDuration() / 1000;
+                        Main_textContent('progress_bar_duration', Play_timeS(ChannelVod_DurationSeconds));
+                        if (Play_ChatEnable && !Play_isChatShown()) Play_showChat();
 
-                PlayVod_PlayerCheckCount = 0;
-                Play_PlayerCheckTimer = 3 + PlayVod_Buffer * 2;
-                PlayVod_PlayerCheckQualityChanged = false;
-                window.clearInterval(PlayVod_streamCheckId);
-                PlayVod_streamCheckId = window.setInterval(PlayVod_PlayerCheck, Play_PlayerCheckInterval);
-            },
-            function () {
-                if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
-                //errorCallback
+                        PlayVod_PlayerCheckCount = 0;
+                        Play_PlayerCheckTimer = 3 + PlayVod_Buffer * 2;
+                        PlayVod_PlayerCheckQualityChanged = false;
+                        window.clearInterval(PlayVod_streamCheckId);
+                        PlayVod_streamCheckId = window.setInterval(PlayVod_PlayerCheck, Play_PlayerCheckInterval);
+                    },
+                    function () {
+                        if (attempt !== Play_nativeAttempt || session !== Play_sessionId || !PlayVod_isOn || PlayVod_useHls) return;
+                        preparing = false;
+                        //errorCallback
 
-                console.log('Play_avplay.prepareAsync Vod NOK:', 'date: ' + new Date());
-                console.log('Play_avplay.prepareAsync Vod NOK:', 'counter: ' + Play_onPlayerCounter);
+                        console.log('Play_avplay.prepareAsync Vod NOK:', 'date: ' + new Date());
+                        console.log('Play_avplay.prepareAsync Vod NOK:', 'counter: ' + Play_onPlayerCounter);
 
-                Play_onPlayerCounter++;
-                if (Play_onPlayerCounter < 2) {
-                    //try twice to recover else lower the quality
-                    Play_RetryLater(function () {
-                        if (attempt === Play_nativeAttempt && PlayVod_isOn && !PlayVod_useHls) PlayVod_onPlayer();
-                    }, 750);
-                } else if (PlayVod_qualityIndex < PlayVod_getQualitiesCount() - 1) {
-                    console.log('Play_avplay.prepareAsync Vod NOK DropOneQuality:', 'date: ' + new Date());
-                    //some device will error out due to codec issue that affect only the main Source stream quality
-                    PlayVod_DropOneQuality();
-                } else {
-                    console.log('Play_avplay.prepareAsync Vod fail too mutch exit:', 'date: ' + new Date());
-                    PlayVod_UseHlsFallback('prepareAsync');
-                }
+                        Play_onPlayerCounter++;
+                        if (Play_onPlayerCounter < 2) {
+                            //try twice to recover else lower the quality
+                            Play_RetryLater(function () {
+                                if (attempt === Play_nativeAttempt && PlayVod_isOn && !PlayVod_useHls) PlayVod_onPlayer();
+                            }, 750);
+                        } else if (PlayVod_qualityIndex < PlayVod_getQualitiesCount() - 1) {
+                            console.log('Play_avplay.prepareAsync Vod NOK DropOneQuality:', 'date: ' + new Date());
+                            //some device will error out due to codec issue that affect only the main Source stream quality
+                            PlayVod_DropOneQuality();
+                        } else {
+                            console.log('Play_avplay.prepareAsync Vod fail too mutch exit:', 'date: ' + new Date());
+                            PlayVod_UseHlsFallback('prepareAsync');
+                        }
+                    }
+                );
+            } catch (error) {
+                preparing = false;
+                PlayVod_UseHlsFallback('prepare failed');
             }
-        );
+        };
+        if (seekOffset) {
+            try {
+                Play_avplay.seekTo(seekOffset * 1000, prepare, function () {
+                    if (attempt === Play_nativeAttempt && session === Play_sessionId && PlayVod_isOn && !PlayVod_useHls) {
+                        preparing = false;
+                        PlayVod_UseHlsFallback('seek failed');
+                    }
+                });
+            } catch (error) {
+                preparing = false;
+                PlayVod_UseHlsFallback('seek failed');
+            }
+        } else prepare();
 
     } else {
         if (Play_ChatEnable && !Play_isChatShown()) Play_showChat();

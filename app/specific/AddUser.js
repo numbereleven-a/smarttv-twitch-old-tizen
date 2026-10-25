@@ -253,7 +253,7 @@ function AddUser_SaveNewUser(responseText) {
     Main_HideLoadDialog();
     if (AddUser_UsernameArray.length === 1) AddUser_UpdateSidepanel();
     if (AddUser_LoginMethod !== null) {
-        Main_values.Users_AddcodePosition = AddUser_UsernameArray.length - 1;
+        Main_values.Users_AddcodePosition = AddUser_UserFindpos(AddUser_Username.login);
         Main_SaveValues();
         AddCode_ShowMethods();
         if (AddUser_LoginMethod === 'device') AddCode_DeviceStart();
