@@ -94,3 +94,5 @@ tizen package -t wgt -s YOUR_CERTIFICATE_PROFILE -- app/.buildResult
 При обновлении не нужно выбирать новый способ или входить заново, пока сохранённая авторизация Twitch остаётся действительной. Новый способ проверен локально и успешным запросом кода у Twitch; полный вход на физическом телевизоре пока не проверен.
 
 Настройки прокси TTV LOL и Purple удалены. Запросы для воспроизведения прямых трансляций идут непосредственно к Twitch.
+
+[![Downloads](https://img.shields.io/github/downloads/numbereleven-a/smarttv-twitch-old-tizen/total?label=Downloads)](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases)

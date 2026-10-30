@@ -95,3 +95,5 @@ Select **Add user** to choose a sign-in method first, then enter your Twitch use
 Updating the app does not require switching methods or signing in again while the saved Twitch authorization remains valid. The new device-code flow has offline checks and a successful code-request check against Twitch; completing sign-in on a physical TV is not yet verified.
 
 TTV LOL and Purple proxy settings have been removed. Live playback requests go directly to Twitch.
+
+[![Downloads](https://img.shields.io/github/downloads/numbereleven-a/smarttv-twitch-old-tizen/total?label=Downloads)](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases)
