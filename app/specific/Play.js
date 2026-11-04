@@ -301,7 +301,8 @@ function Play_GetHlsConfig() {
         enableWorker: false,
         lowLatencyMode: !!Play_LowLatency,
         liveSyncDurationCount: Play_LowLatency ? 2 : 3,
-        liveMaxLatencyDurationCount: Play_LowLatency ? 4 : 6
+        // Growing VODs must remain seekable without being pushed back to live.
+        liveMaxLatencyDurationCount: PlayVod_isOn ? Infinity : (Play_LowLatency ? 4 : 6)
     };
 
     // On Tizen 3.0 MSE cannot decode Twitch's fMP4 (MEDIA_ERR_DECODE), but it does play MPEG-TS, so
@@ -785,6 +786,7 @@ function Play_ReloadLive(automaticRetry) {
 }
 
 function Play_Start(reloadQuality, automaticRetry) {
+    document.getElementById('vod_start_button').style.display = 'none';
     Play_InvalidateSession();
     if (!automaticRetry) Play_StartupRetryUsed = false;
     Play_HasStarted = false;

@@ -25,6 +25,7 @@ var Chat_addlinesId;
 var Chat_cursor = null;
 var Chat_loadChatId;
 var Chat_loadChatNextId;
+var Chat_nextRequest = null;
 var Chat_offset = 0;
 var Chat_title = '';
 var defaultColors = [
@@ -524,6 +525,7 @@ function Chat_Play(id) {
 function Chat_Pause() {
     Main_clearTimeout(Chat_loadChatId);
     Main_clearTimeout(Chat_loadChatNextId);
+    Chat_loadChatNextId = null;
     Main_clearInterval(Chat_addlinesId);
 }
 
@@ -532,6 +534,9 @@ function Chat_Clear() {
     Chat_hasEnded = false;
     Chat_Pause();
     Chat_Id[0] = 0;
+    var request = Chat_nextRequest;
+    Chat_nextRequest = null;
+    if (request) request.abort();
     Main_emptyWithEle(Chat_div[0]);
     Chat_cursor = null;
     Chat_Messages = [];
@@ -583,11 +588,12 @@ function Main_Addline(id) {
 }
 
 function Chat_loadChatNext(id) {
-    if (!Chat_hasEnded && Chat_Id[0] === id) Chat_loadChatNextRequest(id);
+    if (!Chat_hasEnded && Chat_Id[0] === id && !Chat_nextRequest && !Chat_loadChatNextId) Chat_loadChatNextRequest(id);
 }
 
 function Chat_loadChatNextRequest(id) {
     var xmlHttp = new XMLHttpRequest();
+    Chat_nextRequest = xmlHttp;
 
     xmlHttp.open('POST', PlayClip_BaseClipUrl, true);
     xmlHttp.timeout = DefaultHttpGetTimeout * 2;
@@ -597,7 +603,8 @@ function Chat_loadChatNextRequest(id) {
     xmlHttp.ontimeout = function () {};
 
     xmlHttp.onreadystatechange = function () {
-        if (xmlHttp.readyState === 4) {
+        if (xmlHttp.readyState === 4 && Chat_nextRequest === xmlHttp) {
+            Chat_nextRequest = null;
             if (xmlHttp.status === 200) {
                 Chat_loadChatSuccess(xmlHttp.responseText, id);
             } else {
@@ -613,7 +620,8 @@ function Chat_loadChatNextError(id) {
     if (Chat_Id[0] === id) {
         Chat_loadChatNextId = Main_setTimeout(
             function () {
-                Chat_loadChatNextRequest(id, 0);
+                Chat_loadChatNextId = null;
+                Chat_loadChatNext(id);
             },
             2500,
             Chat_loadChatNextId

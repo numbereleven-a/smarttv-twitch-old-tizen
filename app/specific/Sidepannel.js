@@ -312,9 +312,8 @@ function Sidepannel_UnSetTopOpacity() {
 function Sidepannel_SetUserLables() {
     Main_values.Sidepannel_IsUser = true;
 
-    //No longer supported
-    Main_HideElement('side_panel_movel_new_5');
-    Main_HideElement('side_panel_new_5');
+    Main_ShowElement('side_panel_movel_new_5');
+    Main_ShowElement('side_panel_new_5');
 
     Main_innerHTML('side_panel_movel_user_text', STR_SPACE + STR_USER_MENU + STR_SPACE);
     Main_ShowElement('side_panel_movel_user_text_holder');
@@ -478,14 +477,6 @@ function Sidepannel_handleKeyDown(event) {
     }
 }
 
-function Sidepannel_handleMainKey(Down) {
-    if (Main_values.Sidepannel_IsUser) {
-        if (Main_values.Sidepannel_Pos === 5) {
-            Main_values.Sidepannel_Pos = Down ? 6 : 4;
-        }
-    }
-}
-
 function Sidepannel_handleKeyDownMain(event) {
     switch (event.keyCode) {
         case KEY_RETURN_Q:
@@ -515,7 +506,6 @@ function Sidepannel_handleKeyDownMain(event) {
             if (Main_values.Sidepannel_Pos) {
                 Sidepannel_RemoveFocusMain();
                 Main_values.Sidepannel_Pos--;
-                Sidepannel_handleMainKey(false);
                 Sidepannel_AddFocusMain();
             }
             break;
@@ -524,7 +514,6 @@ function Sidepannel_handleKeyDownMain(event) {
             if (Main_values.Sidepannel_Pos < 11) {
                 Sidepannel_RemoveFocusMain();
                 Main_values.Sidepannel_Pos++;
-                Sidepannel_handleMainKey(true);
                 Sidepannel_AddFocusMain();
             }
             break;

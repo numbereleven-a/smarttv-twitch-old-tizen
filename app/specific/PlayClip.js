@@ -49,6 +49,7 @@ var PlayClip_ExtraClipInfo =
 
 function PlayClip_Start() {
     Play_InvalidateSession();
+    document.getElementById('vod_start_button').style.display = 'none';
     document.getElementById('reload_button').style.display = 'none';
     document.getElementById('to_live_button').style.display = 'none';
     Main_textContent('stream_live_delay', '');
@@ -167,7 +168,9 @@ function PlayClip_UpdateGameInfoSuccess(response) {
 }
 
 function PlayClip_loadVodOffsetStartVod() {
+    var session = Play_sessionId;
     var xmlHttp = new XMLHttpRequest();
+    Play_requests.push(xmlHttp);
 
     xmlHttp.open('POST', PlayClip_BaseClipUrl, true);
     xmlHttp.timeout = PlayClip_loadingDataTimeout;
@@ -177,7 +180,10 @@ function PlayClip_loadVodOffsetStartVod() {
     xmlHttp.ontimeout = function () {};
 
     xmlHttp.onreadystatechange = function () {
+        if (session !== Play_sessionId || !PlayClip_isOn) return;
         if (xmlHttp.readyState === 4) {
+            var requestIndex = Play_requests.indexOf(xmlHttp);
+            if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
             if (xmlHttp.status === 200) {
                 PlayClip_loadVodOffsetStartVodResult(xmlHttp.responseText);
             } else {
@@ -193,7 +199,7 @@ function PlayClip_loadVodOffsetStartVodResult(responseText) {
     if (PlayClip_isOn) {
         var obj = JSON.parse(responseText);
 
-        if (obj.data && obj.data.clip && obj.data.clip.videoOffsetSeconds) {
+        if (obj.data && obj.data.clip && typeof obj.data.clip.videoOffsetSeconds === 'number') {
             ChannelVod_vodOffset = obj.data.clip.videoOffsetSeconds;
             PlayClip_OpenVodEnd();
             return;
@@ -202,7 +208,9 @@ function PlayClip_loadVodOffsetStartVodResult(responseText) {
 }
 
 function PlayClip_loadVodOffsett() {
+    var session = Play_sessionId;
     var xmlHttp = new XMLHttpRequest();
+    Play_requests.push(xmlHttp);
 
     xmlHttp.open('POST', PlayClip_BaseClipUrl, true);
     xmlHttp.timeout = PlayClip_loadingDataTimeout;
@@ -212,7 +220,10 @@ function PlayClip_loadVodOffsett() {
     xmlHttp.ontimeout = function () {};
 
     xmlHttp.onreadystatechange = function () {
+        if (session !== Play_sessionId || !PlayClip_isOn) return;
         if (xmlHttp.readyState === 4) {
+            var requestIndex = Play_requests.indexOf(xmlHttp);
+            if (requestIndex !== -1) Play_requests.splice(requestIndex, 1);
             if (xmlHttp.status === 200) {
                 PlayClip_loadVodOffsettResult(xmlHttp.responseText);
             } else {
@@ -231,7 +242,7 @@ function PlayClip_loadVodOffsettResult(responseText) {
         if (obj.data && obj.data.clip) {
             var clip = obj.data.clip;
 
-            if (clip.videoOffsetSeconds) {
+            if (typeof clip.videoOffsetSeconds === 'number') {
                 ChannelVod_vodOffset = clip.videoOffsetSeconds;
                 Chat_offset = ChannelVod_vodOffset;
                 Chat_Init();

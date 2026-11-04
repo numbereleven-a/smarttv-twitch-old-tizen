@@ -552,6 +552,30 @@ check('A failed logo request retries the request and accepts its successful resp
   assert.equal(c.Play_LoadLogoSucess,true);
   assert.equal(c.document.getElementById('stream_info_icon').src,'https://example.invalid/logo.png');
 });
+check('Clip VOD lookup and metadata replies cannot affect another playback session',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);
+  for(const name of ['Chat_Clear','Play_ClearPlayer','UserLiveFeed_Hide','Play_IconsResetFocus','PlayClip_hidePanel'])c[name]=()=>{};
+  const starts=[];let chat=0,warnings=0;
+  c.Main_ready=fn=>starts.push({fn:fn.name,vod:c.Main_values.ChannelVod_vodId,offset:c.Main_values.vodOffset});
+  c.Chat_Init=()=>chat++;c.Chat_NoVod=()=>warnings++;c.PlayClip_OpenVodEndError=()=>warnings++;
+  c.Main_clientIdHeader='Client-ID';c.Main_Headers_Backup=[['Client-ID','example-client']];
+  c.PlayClip_HasVOD=true;c.PlayClip_isOn=true;c.ChannelClip_playUrl='clip-a';
+  c.ChannelVod_vodOffset=-1;c.Main_values.ChannelVod_vodId='vod-a';
+  c.PlayClip_OpenVod();const lookup=stats.requests.at(-1);
+  c.PlayClip_loadVodOffsett();const metadata=stats.requests.at(-1);
+  for(const req of [lookup,metadata])req.abort=function(){this.aborted=true;this.respond('',0);};
+  c.PlayClip_PreshutdownStream();assert.ok(lookup.aborted&&metadata.aborted);
+  c.Play_InvalidateSession();c.PlayClip_isOn=true;c.ChannelClip_playUrl='clip-b';
+  c.Main_values.ChannelVod_vodId='vod-b';c.ChannelVod_vodOffset=-1;
+  const response=JSON.stringify({data:{clip:{videoOffsetSeconds:123}}});
+  lookup.respond(response);metadata.respond(response);lookup.respond('',500);metadata.respond('',500);
+  assert.equal(starts.length,0);assert.equal(chat,0);assert.equal(warnings,0);
+  assert.equal(c.PlayClip_isOn,true);assert.equal(c.ChannelVod_vodOffset,-1);assert.equal(c.Play_requests.length,0);
+  c.PlayClip_loadVodOffsett();stats.requests.at(-1).respond(JSON.stringify({data:{clip:{videoOffsetSeconds:0}}}));
+  assert.equal(chat,1);assert.equal(c.ChannelVod_vodOffset,0);assert.equal(c.Play_requests.length,0);
+  c.ChannelVod_vodOffset=-1;c.PlayClip_OpenVod();stats.requests.at(-1).respond(JSON.stringify({data:{clip:{videoOffsetSeconds:0}}}));
+  assert.deepEqual(starts,[{fn:'PlayVod_Start',vod:'vod-b',offset:0}]);assert.equal(c.Play_requests.length,0);
+});
 check('Tizen 2.4 keeps the original HLS config in both latency modes; Tizen 3 enables conversion',()=>{
   const {c}=env();
   for(const version of ['2.4.0',2.4,undefined,'unknown','3.0',3]) {
@@ -828,6 +852,51 @@ check('HLS VOD consumes its restored seek and periodically saves the current pos
   c.PlayVod_BindHlsListeners();c.Play_avplay_hls_player.onloadedmetadata();assert.equal(c.Play_avplay_hls_player.currentTime,120);
   c.PlayVod_currentTime=300000;c.PlayVod_SaveOffset();c.PlayVod_currentTime=360000;c.PlayVod_SaveOffset();
   assert.deepEqual(saved,[300,360]);assert.equal(c.Main_values.vodOffset,0);
+  c.ChannelVod_DurationSeconds=3600;c.PlayVod_TimeToJump=600;c.PlayVod_jump();
+  c.Play_avplay_hls_player.currentTime=900;c.Play_avplay_hls_player.ontimeupdate();c.PlayVod_SaveOffset();
+  c.Play_avplay_hls_player.currentTime=960;c.Play_avplay_hls_player.ontimeupdate();c.PlayVod_SaveOffset();
+  assert.deepEqual(saved,[300,360,600,900,960]);assert.equal(c.Main_values.vodOffset,0);
+});
+check('From Start navigates and seeks in HLS and Native VOD without changing clip controls',()=>{
+  const {c,stats}=env();c.PlayVod_isOn=true;c.PlayVod_useHls=true;c.PlayClip_HasVOD=false;
+  c.PlayVod_state=c.Play_STATE_PLAYING;c.PlayVod_PanelY=1;c.PlayClip_EnterPos=0;
+  c.KEY_LEFT=37;c.KEY_RIGHT=39;c.KEY_ENTER=13;c.UserLiveFeed_isFeedShow=()=>false;
+  c.Play_isPanelShown=()=>true;c.Play_isVodDialogShown=()=>false;
+  c.Main_SaveValues=()=>{};c.PlayVod_ProgresBarrUpdate=()=>{};
+  c.ChannelVod_DurationSeconds=3600;c.Play_avplay_hls_player.currentTime=600;
+  c.PlayVod_handleKeyDown({keyCode:37});
+  assert.ok(c.document.getElementById('vod_start_button').classList.contains('progress_bar_div_focus'));
+  c.PlayVod_handleKeyDown({keyCode:13});
+  assert.equal(c.Play_avplay_hls_player.currentTime,0);assert.equal(stats.videoPlay,1);
+  c.PlayVod_handleKeyDown({keyCode:39});
+  assert.ok(c.document.getElementById('pause_button').classList.contains('progress_bar_div_focus'));
+  assert.ok(!c.document.getElementById('vod_start_button').classList.contains('progress_bar_div_focus'));
+  c.PlayVod_useHls=false;let nativeState='PLAYING';const seeks=[];
+  c.Play_avplay.getState=()=>nativeState;c.Play_avplay.pause=()=>{nativeState='PAUSED';};
+  c.Play_avplay.play=()=>{nativeState='PLAYING';};c.Play_avplay.seekTo=value=>seeks.push(value);
+  c.PlayVod_JumpToStart();assert.deepEqual(seeks,[0]);assert.equal(nativeState,'PLAYING');
+  c.PlayVod_useHls=true;c.Play_avplay_hls_player.currentTime=500;c.Play_BufferDialogVisible=()=>true;
+  c.PlayVod_JumpToStart();assert.equal(c.Play_avplay_hls_player.currentTime,500);assert.equal(stats.videoPlay,1);
+  c.PlayVod_isOn=false;c.PlayClip_isOn=true;c.PlayClip_EnterPos=-1;c.PlayVod_IconsBottonFocus();
+  assert.ok(c.document.getElementById('back_button').classList.contains('progress_bar_div_focus'));
+  assert.ok(!c.document.getElementById('vod_start_button').classList.contains('progress_bar_div_focus'));
+});
+check('Growing HLS VOD stays at its beginning while live playback still catches up',()=>{
+  const {c}=env();const previousSelf=global.self;global.self=global;
+  try {
+    for(const vod of [false,true]) {
+      c.PlayVod_isOn=vod;
+      const player=new realHls(c.Play_GetHlsConfig());
+      try {
+        Object.defineProperty(player,'liveSyncPosition',{value:894});
+        const media={currentTime:0,duration:900,readyState:4};
+        player.streamController.media=media;player.streamController._hasEnoughToStart=true;
+        player.streamController.synchronizeToLiveEdge({fragmentStart:0,edge:900,targetduration:2});
+        assert.equal(media.currentTime,vod?0:894);
+        player.streamController.media=null;
+      } finally {player.destroy();}
+    }
+  } finally {if(previousSelf===undefined)delete global.self;else global.self=previousSelf;}
 });
 check('Adding an alphabetically earlier account starts authentication for that account after sorting',()=>{
   const {c}=loginEnv();const noop=()=>{};
@@ -849,6 +918,30 @@ check('VOD chat renders the final waiting message before ending the page',()=>{
     {cursor:'last-cursor',node:{id:'b',commenter:null}}
   ]}}}}),1);
   assert.equal(c.Chat_cursor,'last-cursor');
+});
+check('Slow VOD chat pagination keeps one request, respects retries and rejects cancelled replies',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/ChatVod.js'),c);
+  const pending=new Map();let timer=0;
+  c.Main_setTimeout=(fn,delay,old)=>{pending.delete(old);pending.set(++timer,fn);return timer;};
+  c.Main_clearTimeout=id=>pending.delete(id);c.Main_clearInterval=()=>{};
+  for(const name of ['Main_emptyWithEle','ChatLive_ClearIds','ChatLive_resetChatters','Chat_Clean','ChatLive_ElemntAdd'])c[name]=()=>{};
+  c.Main_Slice=arr=>Array.from(arr);c.Chat_Id=[1];c.Chat_cursor='cursor-a';c.Chat_Messages=[{time:1,message:'first'}];
+  c.PlayVod_currentTime=60000;c.Main_values.ChannelVod_vodId='example-vod';
+  c.PlayClip_BaseClipUrl='https://example.invalid/gql';c.Main_clientIdHeader='Client-ID';c.Chat_token='example-client';c.DefaultHttpGetTimeout=10000;
+  c.Chat_loadChatNext(1);c.Main_Addline(1);
+  for(let tick=0;tick<4;tick++)c.Main_Addline(1);
+  assert.equal(stats.requests.length,1);
+  stats.requests[0].respond('',500);for(let tick=0;tick<4;tick++)c.Main_Addline(1);
+  assert.equal(stats.requests.length,1);assert.equal(pending.size,1);
+  const retry=pending.get(c.Chat_loadChatNextId);pending.clear();retry();assert.equal(stats.requests.length,2);
+  const old=stats.requests[1];old.abort=function(){this.aborted=true;this.respond('',0);};
+  c.Chat_Clear();assert.ok(old.aborted);assert.equal(c.Chat_nextRequest,null);assert.equal(pending.size,0);
+  c.Chat_Id[0]=2;c.Chat_cursor='cursor-new';c.Chat_loadChatNext(2);const current=stats.requests[2];
+  old.respond(JSON.stringify({data:{video:{comments:{edges:[{cursor:'stale',node:{id:'stale',commenter:null}}]}}}}));
+  assert.equal(c.Chat_cursor,'cursor-new');assert.equal(c.Chat_nextRequest,current);
+  current.respond(JSON.stringify({data:{video:{comments:{edges:[{cursor:'cursor-next',node:{id:'current',commenter:null}}]}}}}));
+  assert.equal(c.Chat_cursor,'cursor-next');assert.equal(c.Chat_nextRequest,null);
+  c.Chat_loadChatNext(2);assert.equal(JSON.parse(stats.requests[3].body).variables.cursor,'cursor-next');
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

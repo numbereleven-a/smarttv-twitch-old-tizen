@@ -92,6 +92,7 @@ function Screens_init() {
 }
 
 function Screens_exit() {
+    if (inUseObj === UserVod) UserVod_Cancel();
     Main_addFocusVideoOffset = 0;
 
     if (inUseObj.label_exit) {
@@ -105,6 +106,7 @@ function Screens_exit() {
 }
 
 function Screens_StartLoad() {
+    if (inUseObj === UserVod) UserVod_Cancel();
     Main_showLoadDialog();
     Main_updateclock();
     Main_empty(inUseObj.table);
@@ -150,6 +152,10 @@ function Screens_loadDataPrepare() {
 }
 
 function Screens_loadDataRequest() {
+    if (inUseObj === UserVod) {
+        UserVod_Load();
+        return;
+    }
     inUseObj.set_url();
     var xmlHttp;
     if (inUseObj.isKraken) {

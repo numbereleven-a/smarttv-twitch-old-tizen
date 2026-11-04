@@ -553,92 +553,29 @@ function ScreensObj_InitAGameVod() {
 }
 
 function ScreensObj_InitUserVod() {
-    UserVod = Screens_assign(
-        {
-            periodMaxPos: 2,
-            HeaderQuantity: 3,
-            object: 'videos',
-            key_pgDown: Main_UserChannels,
-            key_pgUp: Main_usergames,
-            ids: Screens_ScreenIds('UserVod'),
-            table: 'stream_table_user_vod',
-            screen: Main_UserVod,
-            time: ['time', 'views'],
-            highlightSTR: 'UserVod_highlight',
-            highlight: Main_getItemBool('UserVod_highlight', false),
-            periodPos: Main_getItemInt('UserVod_periodPos', 1),
-            base_url: Main_kraken_api + 'videos/followed?limit=' + Main_ItemsLimitMax,
-            set_url: function () {
-                this.token = Main_OAuth + AddUser_UsernameArray[0].access_token;
-
-                this.url =
-                    this.base_url +
-                    '&broadcast_type=' +
-                    (this.highlight ? 'highlight' : 'archive') +
-                    '&sort=' +
-                    this.time[this.periodPos - 1] +
-                    '&offset=' +
-                    this.offset;
-            },
-            key_play: function () {
-                if (this.posY === -1) {
-                    if (this.posX === 0) {
-                        this.highlight = !this.highlight;
-                        this.SetPeriod();
-                        Screens_StartLoad();
-                        Main_setItem(this.highlightSTR, this.highlight ? 'true' : 'false');
-                    } else {
-                        this.periodPos++;
-                        if (this.periodPos > this.periodMaxPos) this.periodPos = 1;
-                        this.SetPeriod();
-                        Screens_StartLoad();
-                    }
-                } else Main_OpenVod(this.posY + '_' + this.posX, this.ids, Screens_handleKeyDown);
-            },
-            SwitchesIcons: ['movie-play', 'history'],
-            addSwitches: function () {
-                this.TopRowCreated = true;
-                this.row = document.createElement('div');
-                var SwitchesStrings = [STR_SPACE + STR_SPACE + STR_SWITCH_VOD, STR_SPACE + STR_SPACE + STR_SWITCH_TYPE];
-                var thumbfollow,
-                    div,
-                    i = 0;
-
-                for (i; i < SwitchesStrings.length; i++) {
-                    thumbfollow = '<i class="icon-' + this.SwitchesIcons[i] + ' stream_channel_follow_icon"></i>' + SwitchesStrings[i];
-                    div = document.createElement('div');
-                    div.setAttribute('id', this.ids[8] + 'y_' + i);
-                    div.className = 'stream_cell_period';
-                    div.innerHTML =
-                        '<div id="' +
-                        this.ids[0] +
-                        'y_' +
-                        i +
-                        '" class="stream_thumbnail_channel_vod" ><div id="' +
-                        this.ids[3] +
-                        'y_' +
-                        i +
-                        '" class="stream_channel_follow_game">' +
-                        thumbfollow +
-                        '</div></div>';
-                    this.row.appendChild(div);
-                }
-                document.getElementById(this.table).appendChild(this.row);
-            },
-            label_init: function () {
-                this.SetPeriod();
-                Sidepannel_SetTopOpacity(this.screen);
-            },
-            SetPeriod: function () {
-                Main_setItem('UserVod_periodPos', this.periodPos);
-
-                ScreensObj_SetTopLable(STR_USER, (this.highlight ? STR_PAST_HIGHL : STR_PAST_BROA) + (this.periodPos === 1 ? STR_TIME : STR_VIWES));
-            }
+    UserVod = Screens_assign({
+        object: 'data',
+        use_helix: true,
+        ids: Screens_ScreenIds('UserVod'),
+        table: 'stream_table_user_vod',
+        screen: Main_UserVod,
+        key_pgDown: Main_UserChannels,
+        key_pgUp: Main_usergames,
+        key_play: function () {
+            Main_OpenVod(this.posY + '_' + this.posX, this.ids, Screens_handleKeyDown);
         },
-        Base_obj
-    );
-
-    UserVod = Screens_assign(UserVod, Base_Vod_obj);
+        label_init: function () {
+            var userId = AddUser_UsernameArray[0].id;
+            if (this.followedUserId !== userId) {
+                UserVod_Cancel();
+                this.status = false;
+                this.followedUserId = userId;
+            }
+            ScreensObj_TopLableUserInit();
+            ScreensObj_SetTopLable(STR_USER, STR_VIDEOS);
+        }
+    }, Base_obj, Base_Vod_obj);
+    UserVod.HasSwitches = false;
 }
 
 var Base_Live_obj = {
@@ -1432,7 +1369,7 @@ function ScreensObj_InitUserGames() {
             table: 'stream_table_user_games',
             screen: Main_usergames,
             key_pgDownNext: Main_UserChannels,
-            key_pgDown: Main_UserChannels,
+            key_pgDown: Main_UserVod,
             key_pgUp: Main_UserLive,
             isLive: false,
             hasGameProp: true,
@@ -1580,7 +1517,7 @@ function ScreensObj_InitUserChannels() {
             screen: Main_UserChannels,
             object: 'data',
             key_pgDown: Main_UserLive,
-            key_pgUp: Main_usergames,
+            key_pgUp: Main_UserVod,
             key_pgUpNext: Main_UserChannels,
             base_url: Main_helix_api + 'channels/followed?first=' + Main_ItemsLimitMax + '&user_id=',
             base_url_channels: Main_helix_api + 'users?',
