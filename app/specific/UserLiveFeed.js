@@ -139,6 +139,10 @@ var UserLiveFeed_loadDataSuccessUrl;
 
 function UserLiveFeed_loadDataSuccess(responseText) {
     UserLiveFeed_loadDataSuccessResponse = JSON.parse(responseText).data;
+    if (!UserLiveFeed_loadDataSuccessResponse.length) {
+        UserLiveFeed_loadDataSuccessEnd([], {});
+        return;
+    }
     var userids;
 
     for (var i = 0; i < UserLiveFeed_loadDataSuccessResponse.length; i++) {

@@ -322,7 +322,7 @@ function Settings_SetSettings() {
 
     key = 'enter_refresh';
     Settings_value_keys.push(key);
-    Settings_value[key].values = [STR_NO, STR_YES];
+    Settings_value[key].values = [STR_YES, STR_NO];
 
     div += Settings_DivOptionNoSummary(key, STR_ENTER_REFRESH);
 
@@ -540,7 +540,7 @@ function Settings_SetStrings() {
     //Player restore
     key = 'restor_playback';
     Settings_DivOptionChangeLang(key, STR_RESTORE_PLAYBACK, STR_RESTORE_PLAYBACK_SUMARRY);
-    Settings_value[key].values = [STR_YES, STR_NO];
+    Settings_value[key].values = [STR_NO, STR_YES];
 
     //Thumb quality
     key = 'thumb_quality';
@@ -558,7 +558,7 @@ function Settings_SetStrings() {
     // Videos
     key = 'videos_animation';
     Main_textContent(key + '_name', STR_VIDEOS_ANIMATION);
-    Settings_value[key].values = [STR_YES, STR_NO];
+    Settings_value[key].values = [STR_NO, STR_YES];
 
     key = 'clip_auto_play_next';
     Main_textContent(key + '_name', STR_AUTO_PLAY_NEXT);
@@ -969,8 +969,8 @@ function Settings_DialogShowChat() {
             summary: null
         },
         show_chatters: {
-            defaultValue: Settings_value.chat_timestamp.defaultValue,
-            values: Settings_value.chat_timestamp.values,
+            defaultValue: Settings_value.show_chatters.defaultValue,
+            values: Settings_value.show_chatters.values,
             title: STR_SHOW_IN_CHAT,
             summary: STR_SHOW_IN_CHAT_SUMMARY
         },

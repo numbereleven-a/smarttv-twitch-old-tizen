@@ -38,6 +38,7 @@ var PlayClip_HasNext = false;
 var PlayClip_HasBack = false;
 var PlayClip_HideShowNextDiv = ['next_button', 'back_button'];
 var PlayClip_EnterPos = 0;
+var PlayClip_vodWarningTimer = null;
 var PlayClip_All = false;
 var PlayClip_All_Forced = true;
 var PlayClip_loadingtreamerInfoTry = 0;
@@ -204,6 +205,7 @@ function PlayClip_loadVodOffsetStartVodResult(responseText) {
             PlayClip_OpenVodEnd();
             return;
         }
+        PlayClip_OpenVodEndError(STR_FAIL_VOD_INFO);
     }
 }
 
@@ -266,7 +268,7 @@ function PlayClip_loadVodOffsettResult(responseText) {
                 Play_LoadLogo(Main_getElementById('stream_info_icon'), clip.broadcaster.profileImageURL);
 
                 Main_values.Main_selectedChannelDisplayname = clip.broadcaster.displayName;
-                Main_values.Main_selectedChannelPartner = clip.broadcaster.roles.isPartner;
+                Main_values.Main_selectedChannelPartner = !!(clip.broadcaster.roles && clip.broadcaster.roles.isPartner);
             }
         }
     }
@@ -363,7 +365,7 @@ function PlayClip_loadDataError() {
     } else {
         if (Main_IsNotBrowser) {
             Play_HideBufferDialog();
-            Play_PlayEndStart(3);
+            Play_PlayEndStart(3, true);
         } else PlayClip_loadDataSuccessFake();
     }
 }
@@ -423,17 +425,17 @@ var PlayClip_listener = {
     onerror: function (eventType) {
         if (PlayClip_isOn) PlaybackDiagnostics.error('Clip Native', eventType);
         console.log('onerror:', 'date: ' + new Date() + ' eventType: ' + eventType);
-        if (eventType === 'PLAYER_ERROR_CONNECTION_FAILED' || eventType === 'PLAYER_ERROR_INVALID_URI') Play_PannelEndStart(3);
+        if (eventType === 'PLAYER_ERROR_CONNECTION_FAILED' || eventType === 'PLAYER_ERROR_INVALID_URI') Play_PannelEndStart(3, true);
     }
 };
 
 function PlayClip_QualityGenerate(response) {
     PlayClip_qualities = [];
 
-    response = JSON.parse(response);
+    try { response = JSON.parse(response); } catch (error) { response = null; }
     var token;
 
-    if (response && response.hasOwnProperty('data') && response.data.hasOwnProperty('clip')) {
+    if (response && response.data && response.data.clip && response.data.clip.playbackAccessToken && Array.isArray(response.data.clip.videoQualities)) {
         token =
             '?sig=' +
             encodeURIComponent(response.data.clip.playbackAccessToken.signature) +
@@ -473,6 +475,13 @@ function PlayClip_FrameRate(value) {
 
 function PlayClip_qualityChanged() {
     window.clearInterval(PlayClip_streamCheckId);
+    if (!PlayClip_qualities.length) {
+        Play_offPlayer();
+        Play_HideBufferDialog();
+        Play_PlayEndStart(3, true);
+        Play_showWarningDialog('No playable clip quality is available.');
+        return;
+    }
     PlayClip_qualityIndex = 0;
     PlayClip_playingUrl = PlayClip_qualities[0].url;
 
@@ -523,7 +532,7 @@ function PlayClip_BindVideoListeners() {
     if (!Play_avplay_hls_player || PlayClip_hlsListenerBound) return;
     PlayClip_hlsListenerBound = true;
 
-    Play_avplay_hls_player.onloadedmetadata = function () {
+    Play_avplay_hls_player.addEventListener('loadedmetadata', function () {
         if (!PlayClip_isOn) return;
         var dur = Math.floor(Play_avplay_hls_player.duration || 0);
         if (dur) {
@@ -539,9 +548,9 @@ function PlayClip_BindVideoListeners() {
                 PlaybackDiagnostics('Playback operation failed');
             }
         }
-    };
+    });
 
-    Play_avplay_hls_player.ontimeupdate = function () {
+    Play_avplay_hls_player.addEventListener('timeupdate', function () {
         if (!PlayClip_isOn) return;
         if (Play_avplay_hls_player.currentTime > 0) {
             Play_avplay_hls_player.style.visibility = 'visible';
@@ -550,28 +559,28 @@ function PlayClip_BindVideoListeners() {
         }
         var currentTime = Math.floor(Play_avplay_hls_player.currentTime * 1000);
         if (PlayClip_currentTime !== currentTime) PlayClip_updateCurrentTime(currentTime);
-    };
+    });
 
-    Play_avplay_hls_player.onplaying = function () {
+    Play_avplay_hls_player.addEventListener('playing', function () {
         if (!PlayClip_isOn) return;
         PlayClip_offsettime = 0;
         PlayClip_bufferingcomplete = true;
         Play_HideBlackOverlay();
         Play_HideBufferDialog();
-    };
+    });
 
-    Play_avplay_hls_player.onwaiting = function () {
+    Play_avplay_hls_player.addEventListener('waiting', function () {
         if (!PlayClip_isOn) return;
         if (!Play_BufferDialogVisible()) Play_showBufferDialog();
-    };
+    });
 
-    Play_avplay_hls_player.onended = function () {
+    Play_avplay_hls_player.addEventListener('ended', function () {
         if (!PlayClip_isOn) return;
         if (PlayClip_currentTime < 1000) return;
         Play_PannelEndStart(3);
-    };
+    });
 
-    Play_avplay_hls_player.onerror = function () {
+    Play_avplay_hls_player.addEventListener('error', function () {
         if (!PlayClip_isOn || this.playbackDisposed || Play_avplay_hls_player !== this) return;
         PlaybackDiagnostics.error('Clip Video', 'mediaError_' + (this.error ? this.error.code : 'unknown'));
         console.log('PlayClip video onerror');
@@ -586,7 +595,7 @@ function PlayClip_BindVideoListeners() {
         } else {
             Play_EndStart(false, 3);
         }
-    };
+    });
 }
 
 function PlayClip_Resume() {
@@ -660,6 +669,7 @@ function PlayClip_shutdownStream() {
 }
 
 function PlayClip_PreshutdownStream() {
+    window.clearTimeout(PlayClip_vodWarningTimer);
     Play_offPlayer();
     // Clips play on the <video> element - stop and detach it too.
     if (Play_avplay_hls_player) {
@@ -822,7 +832,7 @@ function PlayClip_SetHtmlQuality(element) {
     var quality_string = PlayClip_quality;
     if (PlayClip_quality.indexOf('source') !== -1) quality_string = quality_string.replace('source', STR_SOURCE);
 
-    Main_textContent(element, PlayClip_quality);
+    Main_textContent(element, quality_string);
 }
 
 function PlayClip_setHidePanel() {
@@ -848,7 +858,15 @@ function PlayClip_OpenVod() {
 function PlayClip_OpenVodEndError(string) {
     Play_clearHidePanel();
     Play_IsWarning = true;
-    Play_showWarningDialog(string, 2000);
+    Play_showWarningDialog(string);
+    window.clearTimeout(PlayClip_vodWarningTimer);
+    var session = Play_sessionId;
+    PlayClip_vodWarningTimer = window.setTimeout(function () {
+        if (session !== Play_sessionId || !PlayClip_isOn) return;
+        Play_IsWarning = false;
+        Play_HideWarningDialog();
+        PlayClip_setHidePanel();
+    }, 2000);
 }
 
 function PlayClip_OpenVodEnd() {
@@ -998,7 +1016,7 @@ function PlayClip_handleKeyDown(e) {
                         Play_EndDialogEnter = 3;
                         Play_EndUpclearCalback = PlayClip_handleKeyDown;
                         Play_SavePlayData();
-                        Main_OpenLiveStream(Play_FeedPos, UserLiveFeed_ids, Play_handleKeyDown);
+                        Main_OpenLiveStream(Play_FeedPos, UserLiveFeed_ids, PlayClip_handleKeyDown);
                     }
                 } else if (Play_isPanelShown()) {
                     Play_clearHidePanel();
@@ -1028,14 +1046,14 @@ function PlayClip_handleKeyDown(e) {
                 break;
             case KEY_PLAY:
                 if (!Play_isEndDialogVisible() && Play_isNotplaying()) {
-                    Play_KeyPause(2);
-                    if (!Main_values.Play_ChatForceDisable) Chat_Play(Chat_Id[0]);
+                    Play_KeyPause(3);
+                    if (PlayClip_HasVOD && !Main_values.Play_ChatForceDisable) Chat_Play(Chat_Id[0]);
                 }
                 break;
             case KEY_PAUSE:
                 if (!Play_isEndDialogVisible() && !Play_isNotplaying()) {
-                    Play_KeyPause(2);
-                    if (!Main_values.Play_ChatForceDisable) Chat_Pause();
+                    Play_KeyPause(3);
+                    if (PlayClip_HasVOD && !Main_values.Play_ChatForceDisable) Chat_Pause();
                 }
                 break;
             case KEY_PLAYPAUSE:

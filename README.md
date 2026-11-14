@@ -14,7 +14,7 @@ This fork fixes Twitch live playback on older Samsung Tizen TVs. Channels that e
 | | |
 |---|---|
 | App name | Twitch Old Tizen |
-| Release / package version | 4.1.4 / 4.1.4 |
+| Release / package version | 4.1.5 / 4.1.5 |
 | License | GPL-3.0; see [LICENSE](LICENSE) and upstream notices |
 | Release | [Download the installation package](https://github.com/numbereleven-a/smarttv-twitch-old-tizen/releases/latest) |
 | Sign-in | Choose Twitch device-code sign-in or the original fgl27 method; see [Authentication](#authentication) |
@@ -34,7 +34,7 @@ You can alternatively clone this repository and build from source. The app is no
 
 ### Updating an existing installation
 
-Version 4.1.4 keeps the application identifiers used since 4.0.5. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
+Version 4.1.5 keeps the application identifiers used since 4.0.5. Sign the update with the same author certificate and install it over the existing application without uninstalling it. This preserves its saved account and settings; an expired or revoked Twitch authorization may still require signing in again. Keep a backup of your author certificate. Version 4.0.4 remains a separate application and its account data is not transferred to this application.
 
 ## Player controls
 
@@ -42,7 +42,7 @@ Version 4.1.4 keeps the application identifiers used since 4.0.5. Sign the updat
 - **From Start:** on the VOD player panel, press Left from Play/Pause and select From Start to seek to the beginning and resume playback. Available for completed and growing recordings, in HLS and Native. HLS VOD playback is not automatically moved back to the live edge after seeking.
 - **Reload:** on the live player panel, press Right from Play/Pause and select Reload. It restarts the current channel with fresh playback data while retaining the selected quality. Reload is also available in the live playback error dialog.
 - **Live delay:** the panel displays an approximate delay such as `LIVE · ~8 s` for HLS live playback. This measures distance from the available HLS live edge, not total camera-to-TV latency. No value is displayed for Native playback or when the estimate is unavailable. Reload starts a fresh session near the live edge; it cannot remove Twitch's delivery delay.
-- **Automatic startup retry:** a live playback failure before playback starts triggers one automatic Reload. A second failure shows the error dialog. Errors remain in the in-memory debug history; playback that has already started is not automatically reloaded.
+- **Automatic startup retry:** a live playback failure before playback starts triggers one automatic Reload. A second failure shows the error dialog. Playback error dialogs remain open until Reload, Replay or exit; the configured end timer still applies to normal completion. Errors remain in the in-memory debug history; playback that has already started is not automatically reloaded.
 - **To live:** press Right twice from Play/Pause to select To live. It is available only for HLS live playback, including Auto when it selected HLS. It refreshes the playlist and seeks to the live sync position without restarting the channel.
 - **HLS live pause:** pauses the video and stream loading to keep the frame still. Play resumes loading from the paused position; hls.js may return to live if that position has left the available stream window.
 - **Loading status:** the spinner shows the current loading stage, including format detection, Native startup, HLS fallback and the automatic retry.

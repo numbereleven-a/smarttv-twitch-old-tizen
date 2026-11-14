@@ -37,7 +37,7 @@ function env() {
       removeEventListener:noop,
       pause() { stats.videoPause++;this.paused=true; },
       play() { stats.videoPlay++;this.paused=false; },
-      dispatch(name) { for (const fn of listeners[name] || []) fn();
+      dispatch(name) { for (const fn of listeners[name] || []) fn.call(this);
         if (typeof this['on'+name] === 'function') this['on'+name](); }
     };
   }
@@ -161,10 +161,10 @@ check('R3b: native VOD PLAYING must not be reported as paused',()=>{
 check('R4: changing VOD HLS quality must bind handlers to the replacement video',()=>{
   const {c}=env();c.PlayVod_isOn=true;c.PlayVod_useHls=true;c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';
   c.PlayVod_onPlayer();const first=c.Play_avplay_hls_player;
-  assert.equal(typeof first.ontimeupdate,'function');
+  assert.equal(typeof first.listeners.timeupdate[0],'function');
   c.PlayVod_onPlayer();const second=c.Play_avplay_hls_player;
   assert.notEqual(first,second);
-  assert.equal(typeof second.ontimeupdate,'function',`Video replaced; global bound flag=${c.PlayVod_hlsListenerBound}; new ontimeupdate=${typeof second.ontimeupdate}`);
+  assert.equal(typeof second.listeners.timeupdate[0],'function',`Video replaced; global bound flag=${c.PlayVod_hlsListenerBound}; new ontimeupdate=${typeof second.ontimeupdate}`);
 });
 check('R5: stopping playback must release or stop the HLS loader',()=>{
   const {c,stats}=env();c.initHLSPlayer();c.Play_offPlayer();
@@ -231,7 +231,7 @@ check('VOD replay consumes the replay flag and later quality changes preserve po
   assert.equal(c.PlayVod_replay,false);
   c.Play_avplay_hls_player.currentTime=75;c.PlayVod_onPlayer();
   c.PlayVod_ProgresBarrUpdate=()=>{};c.PlayClip_HasVOD=false;
-  c.Play_avplay_hls_player.onloadedmetadata();
+  c.Play_avplay_hls_player.dispatch('loadedmetadata');
   assert.equal(c.Play_avplay_hls_player.currentTime,75);
 });
 check('Media recovery is bounded and stopped controllers cannot affect playback',()=>{
@@ -508,9 +508,9 @@ check('Clip playback reactivates error handling after a previous player was stop
   c.Play_isOn=false;c.PlayClip_isOn=true;c.PlayClip_playingUrl='https://example.invalid/clip.mp4';
   const errors=[];c.PlaybackDiagnostics.error=(...args)=>errors.push(args);
   c.PlayClip_onPlayer();const plays=stats.videoPlay,video=c.Play_avplay_hls_player;
-  video.error={code:2};video.onerror();
+  video.error={code:2};video.dispatch('error');
   assert.equal(errors.length,1);assert.equal(c.Play_onPlayerCounter,1);assert.equal(stats.videoPlay,plays+1);
-  video.onerror();video.onerror();assert.equal(stats.terminal,1);
+  video.dispatch('error');video.dispatch('error');assert.equal(stats.terminal,1);
 });
 check('Clip requests stop on close and obsolete replies cannot replace a reopened clip or live stream',()=>{
   const response=JSON.stringify({data:{clip:{playbackAccessToken:{signature:'example-signature',value:'example-token'},
@@ -774,16 +774,18 @@ check('An offline restored LIVE channel finishes loading, offers Reload and clea
   assert.equal(c.document.getElementById('dialog_end_stream').classList.contains('hide'),false);
   assert.equal(c.Play_requests.length,0);assert.equal(stats.prepare,0);
 });
-check('Native VOD waits for seek, bounds preparation and rejects late callbacks after fallback',()=>{
+check('Native VOD prepares before seeking and starts only after the seek completes',()=>{
   const {c,stats}=env();const order=[];let seekDone,ready;
+  c.Play_PlayerMode=c.Play_PLAYER_AUTO;
   c.PlayVod_isOn=true;c.PlayVod_useHls=false;c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';
   c.Main_values.vodOffset=120;c.ChannelVod_DurationSeconds=600;c.Chat_Init=()=>{};
   c.Play_StopAndCloseAndPlay=()=>{};c.Play_avplay.seekTo=(offset,ok)=>{order.push('seek');seekDone=ok;};
+  c.Play_avplay.getDuration=()=>600000;
   c.Play_avplay.setBufferingParam=()=>order.push('buffer');c.Play_avplay.prepareAsync=ok=>{order.push('prepare');ready=ok;};
-  c.PlayVod_onPlayer();assert.deepEqual(order,['seek']);seekDone();
-  assert.deepEqual(order,['seek','buffer','buffer','prepare']);assert.equal(stats.timerDelays[0],15000);
-  stats.timers[0]();assert.equal(c.PlayVod_useHls,true);const plays=stats.nativePlay;
-  ready();assert.equal(stats.nativePlay,plays);
+  c.PlayVod_onPlayer(true);assert.deepEqual(order,['buffer','buffer','prepare']);ready();
+  assert.deepEqual(order,['buffer','buffer','prepare','seek']);assert.equal(stats.nativePlay,0);
+  seekDone();assert.equal(stats.nativePlay,1);
+  assert.equal(stats.timerDelays[0],15000);stats.timers[0]();assert.equal(c.PlayVod_useHls,false);
   const other=env();other.c.Play_HlsSupported=false;other.c.PlayVod_useHls=false;
   other.c.PlayVod_UseHlsFallback('synthetic');assert.equal(other.c.PlayVod_useHls,false);assert.equal(other.stats.terminal,1);
   const normal=env();normal.c.PlayVod_isOn=true;normal.c.PlayVod_useHls=false;
@@ -849,12 +851,12 @@ check('Authenticated chat completes welcome, capabilities and JOIN with separate
 check('HLS VOD consumes its restored seek and periodically saves the current position',()=>{
   const {c}=env();const saved=[];c.Main_SaveValues=()=>saved.push(c.Main_values.vodOffset);
   c.PlayVod_isOn=true;c.PlayVod_useHls=true;c.PlayClip_HasVOD=false;c.Main_values.vodOffset=120;
-  c.PlayVod_BindHlsListeners();c.Play_avplay_hls_player.onloadedmetadata();assert.equal(c.Play_avplay_hls_player.currentTime,120);
+  c.PlayVod_BindHlsListeners();c.Play_avplay_hls_player.dispatch('loadedmetadata');assert.equal(c.Play_avplay_hls_player.currentTime,120);
   c.PlayVod_currentTime=300000;c.PlayVod_SaveOffset();c.PlayVod_currentTime=360000;c.PlayVod_SaveOffset();
   assert.deepEqual(saved,[300,360]);assert.equal(c.Main_values.vodOffset,0);
   c.ChannelVod_DurationSeconds=3600;c.PlayVod_TimeToJump=600;c.PlayVod_jump();
-  c.Play_avplay_hls_player.currentTime=900;c.Play_avplay_hls_player.ontimeupdate();c.PlayVod_SaveOffset();
-  c.Play_avplay_hls_player.currentTime=960;c.Play_avplay_hls_player.ontimeupdate();c.PlayVod_SaveOffset();
+  c.Play_avplay_hls_player.currentTime=900;c.Play_avplay_hls_player.dispatch('timeupdate');c.PlayVod_SaveOffset();
+  c.Play_avplay_hls_player.currentTime=960;c.Play_avplay_hls_player.dispatch('timeupdate');c.PlayVod_SaveOffset();
   assert.deepEqual(saved,[300,360,600,900,960]);assert.equal(c.Main_values.vodOffset,0);
 });
 check('From Start navigates and seeks in HLS and Native VOD without changing clip controls',()=>{
@@ -873,8 +875,8 @@ check('From Start navigates and seeks in HLS and Native VOD without changing cli
   assert.ok(!c.document.getElementById('vod_start_button').classList.contains('progress_bar_div_focus'));
   c.PlayVod_useHls=false;let nativeState='PLAYING';const seeks=[];
   c.Play_avplay.getState=()=>nativeState;c.Play_avplay.pause=()=>{nativeState='PAUSED';};
-  c.Play_avplay.play=()=>{nativeState='PLAYING';};c.Play_avplay.seekTo=value=>seeks.push(value);
-  c.PlayVod_JumpToStart();assert.deepEqual(seeks,[0]);assert.equal(nativeState,'PLAYING');
+  c.Play_avplay.play=()=>{nativeState='PLAYING';};c.Play_avplay.seekTo=(value,ok)=>{seeks.push(value);ok();};
+  c.PlayVod_JumpToStart();assert.deepEqual(seeks,[1000]);assert.equal(nativeState,'PLAYING');
   c.PlayVod_useHls=true;c.Play_avplay_hls_player.currentTime=500;c.Play_BufferDialogVisible=()=>true;
   c.PlayVod_JumpToStart();assert.equal(c.Play_avplay_hls_player.currentTime,500);assert.equal(stats.videoPlay,1);
   c.PlayVod_isOn=false;c.PlayClip_isOn=true;c.PlayClip_EnterPos=-1;c.PlayVod_IconsBottonFocus();
@@ -942,6 +944,96 @@ check('Slow VOD chat pagination keeps one request, respects retries and rejects 
   current.respond(JSON.stringify({data:{video:{comments:{edges:[{cursor:'cursor-next',node:{id:'current',commenter:null}}]}}}}));
   assert.equal(c.Chat_cursor,'cursor-next');assert.equal(c.Chat_nextRequest,null);
   c.Chat_loadChatNext(2);assert.equal(JSON.parse(stats.requests[3].body).variables.cursor,'cursor-next');
+});
+check('Auto VOD probes its rendition and ignores a response after closing',()=>{
+  for(const fmp4 of [false,true]) {
+    const {c,stats}=env();c.Play_PlayerMode=c.Play_PLAYER_AUTO;c.PlayVod_isOn=true;c.PlayVod_useHls=false;
+    c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';c.ChannelVod_DurationSeconds=600;
+    c.PlayVod_onPlayer();assert.equal(stats.prepare,0);assert.equal(stats.requests.length,1);
+    stats.requests[0].respond('#EXTM3U\n'+(fmp4?'#EXT-X-MAP:URI="init.mp4"\n':'')+'#EXTINF:2,\nsegment');
+    assert.equal(c.PlayVod_useHls,fmp4);assert.equal(stats.prepare,fmp4?0:1);
+    assert.equal(c.Play_requests.length,0);
+  }
+  const {c,stats}=env();c.Play_PlayerMode=c.Play_PLAYER_AUTO;c.PlayVod_isOn=true;c.PlayVod_useHls=false;
+  c.PlayVod_playingUrl='https://example.invalid/vod.m3u8';c.PlayVod_onPlayer();const old=stats.requests[0];
+  c.Play_offPlayer();c.PlayVod_isOn=false;old.respond('#EXTM3U\n#EXT-X-MAP:URI="init.mp4"');
+  assert.equal(stats.prepare,0);assert.equal(stats.videoPlay,0);
+});
+check('Forced Native VOD stops with an error instead of switching to HLS',()=>{
+  const {c,stats}=env();c.Play_PlayerMode=c.Play_PLAYER_NATIVE;c.PlayVod_isOn=true;c.PlayVod_useHls=false;
+  c.PlayVod_UseHlsFallback('synthetic');assert.equal(c.PlayVod_useHls,false);
+  assert.equal(stats.videoPlay,0);assert.equal(stats.terminal,1);assert.equal(stats.warning,1);
+});
+check('Delayed VOD metadata preserves playback time and obsolete metadata is ignored',()=>{
+  const {c}=env();const requests=[];
+  c.Main_helix_api='https://example.invalid/';
+  c.PlayVod_isOn=true;c.Main_values.ChannelVod_vodId='example';c.Main_values.vodOffset=0;c.PlayVod_currentTime=600000;
+  c.BasexmlHttpGet=(...args)=>requests.push(args);c.twemoji={parse:s=>s};c.Play_partnerIcon=()=>{};
+  c.Main_videoCreatedAt=()=>'';c.Main_addCommas=x=>x;c.AddUser_UserIsSet=()=>false;c.Play_hideFollow=()=>{};c.Play_EndSet=()=>{};
+  let progress;c.PlayVod_ProgresBarrUpdate=pos=>progress=pos;
+  const response=JSON.stringify({data:[{title:'Example',language:'en',duration:'1h0m0s',created_at:'',view_count:1,user_name:'Example',user_id:'id',user_login:'example'}]});
+  c.PlayVod_updateVodInfo();requests[0][4](response);assert.equal(c.PlayVod_currentTime,600000);assert.equal(progress,600);
+  c.PlayVod_updateVodInfo();c.Play_InvalidateSession();c.PlayVod_currentTime=900000;requests[1][4](response);
+  assert.equal(c.PlayVod_currentTime,900000);assert.equal(progress,600);
+});
+check('From Start removes the old resume position after a successful seek only',()=>{
+  const {c}=env();c.PlayVod_isOn=true;c.PlayVod_useHls=true;c.PlayClip_HasVOD=false;
+  c.Main_values.ChannelVod_vodId='example';c.ChannelVod_DurationSeconds=3600;c.Main_SaveValues=()=>{};
+  c.PlayVod_VodIds['#example']=1200;c.PlayVod_JumpToStart();assert.equal(c.PlayVod_VodIds['#example'],undefined);
+  c.PlayVod_VodIds['#example']=1200;c.Play_BufferDialogVisible=()=>true;
+  c.PlayVod_JumpToStart();assert.equal(c.PlayVod_VodIds['#example'],1200);
+});
+check('Clip malformed qualities, missing roles and unavailable VOD offsets do not throw',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);c.PlayClip_isOn=true;
+  c.ChannelClip_language='en';
+  c.PlayClip_QualityGenerate(JSON.stringify({data:{clip:null}}));assert.equal(stats.terminal,1);
+  c.PlayClip_QualityGenerate(JSON.stringify({data:{clip:{playbackAccessToken:{},videoQualities:[]}}}));assert.equal(stats.terminal,2);
+  c.PlayClip_isOn=true;c.Play_partnerIcon=()=>{};c.Play_LoadLogo=()=>{};c.Main_getElementById=id=>c.document.getElementById(id);
+  c.PlayClip_loadVodOffsettResult(JSON.stringify({data:{clip:{broadcaster:{displayName:'Example',roles:null}}}}));
+  assert.equal(c.Main_values.Main_selectedChannelPartner,false);
+  c.PlayClip_OpenVodEndError=()=>stats.warning++;const before=stats.warning;
+  c.PlayClip_loadVodOffsetStartVodResult(JSON.stringify({data:{clip:{videoOffsetSeconds:null}}}));assert.equal(stats.warning,before+1);
+});
+check('Separate Play and Pause keys use the clip backend and skip nonexistent VOD chat',()=>{
+  const {c}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);c.PlayClip_state=c.PlayClip_STATE_PLAYING;
+  vm.runInContext(read('app/general/TVKeyValue.js'),c);
+  c.KEY_LEFT=37;c.KEY_RIGHT=39;c.KEY_ENTER=13;
+  c.KEY_PLAY=415;c.KEY_PAUSE=19;c.PlayClip_HasVOD=false;const modes=[];let chat=0;
+  c.Play_KeyPause=mode=>modes.push(mode);c.Chat_Play=()=>chat++;c.Chat_Pause=()=>chat++;c.Play_isNotplaying=()=>true;
+  c.PlayClip_handleKeyDown({keyCode:415});c.Play_isNotplaying=()=>false;c.PlayClip_handleKeyDown({keyCode:19});
+  assert.deepEqual(modes,[3,3]);assert.equal(chat,0);
+});
+check('Error end dialogs remain open while normal completion still counts down',()=>{
+  const {c,stats}=env(),originals={};vm.createContext(originals);vm.runInContext(read('app/specific/Play.js'),originals);
+  c.PlayClip_STATE_PLAYING=2;
+  c.Play_PlayEndStart=vm.runInContext('('+originals.Play_PlayEndStart.toString()+')',c);
+  c.Play_PrepareshowEndDialog=()=>{};c.Play_showEndDialog=()=>{};c.Play_EndSettingsCounter=3;
+  c.Play_PlayEndStart(2,true);assert.equal(c.Play_EndTextCounter,-2);assert.equal(stats.timers.length,0);
+  c.Play_PlayEndStart(2);assert.equal(c.Play_EndTextCounter,3);assert.ok(stats.timers.length>0);
+});
+check('An empty followed LIVE list finishes without requesting usersundefined',()=>{
+  const {c,stats}=env();vm.runInContext(read('app/specific/UserLiveFeed.js'),c);let ended=0;
+  c.UserLiveFeed_loadDataSuccessEnd=(rows,logos)=>{assert.equal(rows.length,0);ended++;};
+  c.UserLiveFeed_loadDataSuccess(JSON.stringify({data:[]}));assert.equal(ended,1);assert.equal(stats.requests.length,0);
+});
+check('Leaving VOD and clip end dialogs removes the corresponding key handler',()=>{
+  const {c}=env();vm.runInContext(read('app/specific/PlayClip.js'),c);vm.runInContext(read('app/general/TVKeyValue.js'),c);
+  c.Play_isEndDialogVisible=()=>true;c.Play_isVodDialogShown=()=>false;c.Play_EndFocus=false;c.Play_SavePlayData=()=>{};
+  c.UserLiveFeed_ids=[];let handler;c.Main_OpenLiveStream=(id,ids,fn)=>handler=fn;
+  c.PlayVod_state=c.Play_STATE_PLAYING;c.PlayVod_handleKeyDown({keyCode:c.KEY_ENTER});assert.equal(handler,c.PlayVod_handleKeyDown);
+  c.PlayClip_state=c.PlayClip_STATE_PLAYING;c.PlayClip_handleKeyDown({keyCode:c.KEY_ENTER});assert.equal(handler,c.PlayClip_handleKeyDown);
+});
+check('Settings labels retain their meanings and chatters has its own three choices',()=>{
+  const {c}=env();vm.runInContext(read('app/languages/en_US.js'),c);c.en_USLang();
+  vm.runInContext(read('app/specific/Settings.js'),c);c.Settings_DivOptionChangeLang=()=>{};c.Languages_SetLang=()=>{};
+  for(const key of ['restor_playback','videos_animation','enter_refresh'])c.Settings_value[key].defaultValue=1;
+  c.Settings_SetStrings();
+  assert.equal(c.Settings_Obj_values('restor_playback'),c.STR_YES);assert.equal(c.Settings_Obj_values('videos_animation'),c.STR_YES);
+  assert.equal(c.Settings_Obj_values('enter_refresh'),c.STR_NO);
+  c.Settings_value.show_chatters.defaultValue=2;c.Settings_value.chat_timestamp.defaultValue=0;
+  let dialog;c.Settings_DialogShow=obj=>dialog=obj;c.Settings_DialogShowChat();
+  assert.equal(dialog.show_chatters.defaultValue,2);assert.equal(dialog.show_chatters.values.length,3);
+  assert.equal(dialog.show_chatters.values[2],c.STR_SHOW_IN_CHAT_VIEWERS);
 });
 const failed=results.filter(r=>r.status==='FAIL').length;
 const report={kind:'offline mocked unit checks',project:path.basename(root),

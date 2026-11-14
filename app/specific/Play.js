@@ -254,7 +254,7 @@ function Play_MediaFailure(video) {
     video.pause();
     Play_Playing = false;
     Play_HideBufferDialog();
-    Play_PannelEndStart(PlayVod_isOn ? 2 : (PlayClip_isOn ? 3 : 1));
+    Play_PannelEndStart(PlayVod_isOn ? 2 : (PlayClip_isOn ? 3 : 1), true);
     Play_showWarningDialog('Playback failed. Select ' + (PlayVod_isOn || PlayClip_isOn ? STR_REPLAY : STR_RELOAD) + ' to try again.');
 }
 
@@ -376,6 +376,7 @@ function initHLSPlayer() {
     };
     video.onerror = function () {
         if (video.playbackDisposed || Play_avplay_hls_player !== video) return;
+        if (PlayClip_isOn || (PlayVod_isOn && PlayVod_useHls)) return;
         PlaybackDiagnostics('VIDEO error: ' + (video.error ? video.error.code : 'unknown'));
         PlaybackDiagnostics.error('Video', 'mediaError_' + (video.error ? video.error.code : 'unknown'));
         Play_MediaFailure(video);
@@ -1349,7 +1350,7 @@ function Play_loadDataErrorFinish(error_410, Isforbiden) {
         Main_SaveValues();
     } else if (Play_selectedChannel_id_Old !== null) Play_RestorePlayData(error_410);
     else if (Isforbiden) Play_ForbiddenLive();
-    else Play_CheckEndStart(error_410);
+    else Play_CheckEndStart(error_410, true);
 }
 
 function Play_ForbiddenLive() {
@@ -1667,7 +1668,7 @@ function Play_onPlayer() {
     } else Play_loadChat();
 }
 
-function Play_AutoSelectPlayer(url) {
+function Play_AutoSelectPlayer(url, forVod) {
     Play_StopAndClose();
     Play_Playing = false;
     if (Play_autoRequest) Play_autoRequest.abort();
@@ -1684,10 +1685,17 @@ function Play_AutoSelectPlayer(url) {
         var index = Play_requests.indexOf(request);
         if (index !== -1) Play_requests.splice(index, 1);
         if (Play_autoRequest === request) Play_autoRequest = null;
-        if (session !== Play_sessionId || attempt !== Play_nativeAttempt || !Play_isOn ||
-            Play_PlayerMode !== Play_PLAYER_AUTO || url !== Play_playingUrl) return;
+        if (session !== Play_sessionId || attempt !== Play_nativeAttempt ||
+            Play_PlayerMode !== Play_PLAYER_AUTO ||
+            (forVod ? !PlayVod_isOn || url !== PlayVod_playingUrl : !Play_isOn || url !== Play_playingUrl)) return;
         if (errorCode) PlaybackDiagnostics.error('Auto playlist', errorCode);
         Play_AutoSelecting = false;
+        if (forVod) {
+            PlayVod_useHls = useHls && Play_HlsSupported;
+            PlaybackDiagnostics('Auto VOD selected: ' + (PlayVod_useHls ? 'HLS' : 'Native'));
+            PlayVod_onPlayer(true);
+            return;
+        }
         Play_LiveUseHls = useHls && Play_HlsSupported;
         Play_UpdatePlayerLabel();
         PlaybackDiagnostics('Auto selected: ' + (Play_LiveUseHls ? 'HLS' : 'Native'));
@@ -1725,7 +1733,7 @@ function Play_NativeFailure() {
     Play_Playing = false;
     Play_HideBufferDialog();
     Play_EndSet(1);
-    Play_PlayEndStart(1);
+    Play_PlayEndStart(1, true);
     Play_showWarningDialog(Play_HlsSupported ? STR_NATIVE_FAILED : STR_FORMAT_NOT_SUPPORTED);
 }
 
@@ -1909,7 +1917,7 @@ function Play_DropOneQuality(ConnectionDrop) {
 function Play_EndStart(hosting, PlayVodClip) {
     Main_values.Play_isHost = hosting;
     Play_EndSet(PlayVodClip);
-    Play_PlayEndStart(PlayVodClip);
+    Play_PlayEndStart(PlayVodClip, true);
 }
 
 // Check if connection with twitch server is OK if not for 15s drop one quality
@@ -2824,29 +2832,31 @@ function Play_qualityIndexReset() {
 }
 
 //called by android PlayerActivity TODO check this
-function Play_PannelEndStart(PlayVodClip) {
+function Play_PannelEndStart(PlayVodClip, failed) {
     if (PlayVodClip === 1) {
         //live
         window.clearInterval(Play_streamCheckId);
-        Play_CheckEndStart();
+        Play_CheckEndStart(false, failed);
     } else {
-        Play_PlayEndStart(PlayVodClip);
+        Play_PlayEndStart(PlayVodClip, failed);
     }
 }
 
-function Play_PlayEndStart(PlayVodClip) {
+function Play_PlayEndStart(PlayVodClip, failed) {
     window.clearInterval(Play_streamCheckId);
     window.clearInterval(PlayClip_streamCheckId);
     window.clearInterval(PlayVod_streamCheckId);
 
     Play_PrepareshowEndDialog(PlayVodClip);
-    Play_EndTextCounter = !Play_EndSettingsCounter ? -2 : Play_EndSettingsCounter;
+    Play_EndTextCounter = failed || !Play_EndSettingsCounter ? -2 : Play_EndSettingsCounter;
 
     Play_EndText(PlayVodClip);
+    if (failed) Main_textContent('dialog_end_stream_text', 'Playback failed. Select ' +
+        (PlayVodClip === 1 ? STR_RELOAD : STR_REPLAY) + ' to try again.');
     Play_showEndDialog();
 }
 
-function Play_CheckEndStart(error_410) {
+function Play_CheckEndStart(error_410, failed) {
     if (Main_IsNotBrowser) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
 
     if (error_410) {
@@ -2864,7 +2874,7 @@ function Play_CheckEndStart(error_410) {
     Play_offPlayer();
     Play_EndSet(1);
     Main_values.Play_isHost = false;
-    Play_PlayEndStart(1);
+    Play_PlayEndStart(1, failed);
 }
 
 // function Play_CheckId() {
